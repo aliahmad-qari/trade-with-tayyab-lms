@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: nexuscapital-backend
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: VITE_API_URL
+        value: https://nexuscapitalearnings.onrender.com
+      - key: FRONTEND_URL
+        value: https://nexus-capital-earnings.vercel.app
+      - key: ADDITIONAL_ORIGINS
+        value: https://roiwealth.vercel.app
+      - key: REFERRAL_REWARD_PKR
+        value: "85"
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
