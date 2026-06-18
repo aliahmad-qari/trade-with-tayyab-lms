@@ -2,11 +2,10 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import { fileURLToPath } from "url";
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Handle ES module standard filenames
 const __filename = fileURLToPath(import.meta.url);
@@ -1095,9 +1094,17 @@ app.post("/api/admin/courses/:id/delete", (req, res) => {
 });
 
 
-// Express server configuration for frontend asset delivery (Vite Client integration)
+// Express server configuration for frontend asset delivery.
+//
+// IMPORTANT (Render/production): Vite is a *dev-only* dependency and must never
+// be required by the production backend. It is loaded lazily via a dynamic
+// import that only runs in development, so the bundled production server
+// (dist/server.cjs) never resolves "vite" at startup.
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "development") {
+    // Dev-only: attach Vite middleware for HMR / on-the-fly frontend serving.
+    const viteModule = await import("vite");
+    const createViteServer = viteModule.createServer;
     const vite = await createViteServer({
       configFile: path.resolve(__dirname, "../../frontend/vite.config.ts"),
       server: { middlewareMode: true },
@@ -1105,12 +1112,14 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Serve static frontend build from relative directory
+    // Production: serve the pre-built static frontend build only.
     const distPath = path.resolve(process.cwd(), "dist/frontend");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   }
 
   app.listen(PORT, "0.0.0.0", () => {
