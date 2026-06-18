@@ -1,6 +1,0 @@
-{
-  "name": "Trade With Tayyab",
-  "description": "Unlock financial freedom with Trade With Tayyab. Access premium courses on forex, crypto, stock market analysis, and risk management with secure, watermarked streaming, live diagnostics, and real-time tracking.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
