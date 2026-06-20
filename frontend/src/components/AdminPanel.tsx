@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { Course, User, Order } from "../types";
-import { 
-  ShieldAlert, BookOpen, UserCheck, CreditCard, BarChart2, Lock, 
-  Settings, LogOut, ChevronRight, Menu, X, PlusCircle, Search, 
-  Trash2, ShieldCheck, CheckCircle2, RefreshCw, AlertTriangle, 
-  MapPin, Clock, Calendar, Users, Briefcase, DollarSign, Eye, EyeOff, LayoutDashboard
+import { Course, User, Order, PdfProduct } from "../types";
+import {
+  ShieldAlert, BookOpen, UserCheck, CreditCard, BarChart2, Lock,
+  Settings, LogOut, ChevronRight, Menu, X, PlusCircle, Search,
+  Trash2, ShieldCheck, CheckCircle2, RefreshCw, AlertTriangle,
+  MapPin, Clock, Calendar, Users, Briefcase, DollarSign, Eye, EyeOff, LayoutDashboard, FileText
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, 
@@ -14,6 +14,8 @@ import {
 interface AdminPanelProps {
   currentUser: User | null;
   courses: Course[];
+  pdfs: PdfProduct[];
+  fetchPdfs: () => Promise<void>;
   adminStats: { totalUsers: number; totalCourses: number; totalSales: number; totalRevenue: number } | null;
   adminUsers: User[];
   adminOrders: Order[];
@@ -28,6 +30,8 @@ interface AdminPanelProps {
 export default function AdminPanel({
   currentUser,
   courses,
+  pdfs,
+  fetchPdfs,
   adminStats,
   adminUsers,
   adminOrders,
@@ -137,6 +141,108 @@ export default function AdminPanel({
     }
   };
 
+  // PDF Resource Creator/Editor Form State
+  const [pdfTitle, setPdfTitle] = useState("");
+  const [pdfCategory, setPdfCategory] = useState("Forex Trading");
+  const [pdfPrice, setPdfPrice] = useState("");
+  const [pdfThumb, setPdfThumb] = useState("");
+  const [pdfDesc, setPdfDesc] = useState("");
+  const [pdfFileUrl, setPdfFileUrl] = useState("");
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
+  const [pdfFileSource, setPdfFileSource] = useState<"upload" | "url">("upload");
+  const [pdfPreviewSource, setPdfPreviewSource] = useState<"upload" | "url">("upload");
+  const [editingPdfId, setEditingPdfId] = useState<string | null>(null);
+  const [isSubmittingPdf, setIsSubmittingPdf] = useState(false);
+  const [pdfSearch, setPdfSearch] = useState("");
+
+  const resetPdfForm = () => {
+    setPdfTitle("");
+    setPdfCategory("Forex Trading");
+    setPdfPrice("");
+    setPdfThumb("");
+    setPdfDesc("");
+    setPdfFileUrl("");
+    setPdfPreviewUrl("");
+    setEditingPdfId(null);
+  };
+
+  const handleRegisterPdfAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pdfTitle || !pdfPrice || !pdfFileUrl) {
+      addToast("Please fill in PDF title, price, and upload the PDF document", "error");
+      return;
+    }
+    setIsSubmittingPdf(true);
+    const isEditMode = !!editingPdfId;
+    const targetUrl = isEditMode ? "/api/admin/pdfs/update" : "/api/admin/pdfs/create";
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          id: editingPdfId,
+          title: pdfTitle,
+          description: pdfDesc,
+          price: Number(pdfPrice),
+          thumbnailUrl: pdfThumb,
+          pdfUrl: pdfFileUrl,
+          previewUrl: pdfPreviewUrl,
+          category: pdfCategory
+        })
+      });
+      if (response.ok) {
+        addToast(isEditMode ? "PDF resource updated successfully!" : "Premium PDF resource published globally!", "success");
+        resetPdfForm();
+        fetchPdfs();
+        setAdminSubTab("pdfs");
+      } else {
+        const errorData = await response.json();
+        addToast(errorData.message || "PDF publish error", "error");
+      }
+    } catch (e) {
+      addToast("Network failure publishing PDF", "error");
+    } finally {
+      setIsSubmittingPdf(false);
+    }
+  };
+
+  const handleDeletePdfAdmin = async (id: string) => {
+    if (!window.confirm("Do you want to delete this PDF resource entirely from registry?")) return;
+    try {
+      const res = await fetch(`/api/admin/pdfs/${id}/delete`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        addToast("PDF resource removed from database", "info");
+        fetchPdfs();
+      }
+    } catch (e) {
+      addToast("API response block failed", "error");
+    }
+  };
+
+  const handleTogglePdfPublish = async (pdf: PdfProduct) => {
+    try {
+      const response = await fetch(`/api/admin/pdfs/${pdf.id}/toggle-publish`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      if (response.ok) {
+        addToast(pdf.isPublished !== false ? "PDF unpublished successfully" : "PDF published and live!", "success");
+        fetchPdfs();
+      } else {
+        addToast("Toggle publish error", "error");
+      }
+    } catch (e) {
+      addToast("Handshake failure toggling publish", "error");
+    }
+  };
+
   // Payment Setup Settings State
   const [paymentEasyPaisaNo, setPaymentEasyPaisaNo] = useState("03169820955");
   const [paymentJazzCashNo, setPaymentJazzCashNo] = useState("03169820955");
@@ -149,6 +255,8 @@ export default function AdminPanel({
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "courses", label: "Courses Management", icon: BookOpen },
     { id: "add_course", label: "Add Live Course", icon: PlusCircle },
+    { id: "pdfs", label: "PDF Resources", icon: FileText },
+    { id: "add_pdf", label: "Add PDF Resource", icon: PlusCircle },
     { id: "students", label: "Students Registry", icon: Users },
     { id: "orders", label: "Orders Logs", icon: CreditCard },
     { id: "payments", label: "Payment Queues", icon: DollarSign },
@@ -394,6 +502,9 @@ export default function AdminPanel({
                       { title: "Market Flow Fundamentals", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Standard introduction to forex indicators", order: 1 }
                     ]);
                     setCourseResources([]);
+                  }
+                  if (item.id === "add_pdf") {
+                    resetPdfForm();
                   }
                 }}
                 className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-lg text-xs font-semibold select-none transition-all duration-150 cursor-pointer ${
@@ -1222,6 +1333,305 @@ export default function AdminPanel({
                   {isSubmittingCourse 
                     ? "Baking class parameters..." 
                     : (editingCourseId ? "UPDATE PREMIUM COURSE INFO" : "PUBLISH MASTERCLASS COURSE INFO")
+                  }
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* 3b. PDF RESOURCES MANAGEMENT */}
+          {adminSubTab === "pdfs" && (
+            <div className="space-y-6 animate-in fade-in duration-300 text-left">
+              <div className="border-b border-white/5 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="text-2xl font-extrabold text-white">PDF Resource Registry</h1>
+                  <p className="text-xs text-gray-400 mt-1">Search, publish, edit, unpublish, and delete premium PDFs & digital resources.</p>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Search PDFs..."
+                  value={pdfSearch}
+                  onChange={(e) => setPdfSearch(e.target.value)}
+                  className="bg-black/45 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-brand-purple/50 w-full sm:w-56"
+                />
+              </div>
+
+              {pdfs.filter(p => p.title.toLowerCase().includes(pdfSearch.toLowerCase())).length === 0 ? (
+                <div className="p-16 text-center text-xs text-gray-400 rounded-xl bg-brand-card">
+                  No PDF resources registered matching filters. Click "Add PDF Resource" to publish one.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {pdfs.filter(p => p.title.toLowerCase().includes(pdfSearch.toLowerCase())).map((p) => (
+                    <div key={p.id} className="p-4 rounded-xl bg-brand-card border border-white/5 space-y-4 flex flex-col justify-between">
+                      <div className="flex gap-4">
+                        <img src={p.thumbnailUrl} alt="cover" className="w-16 h-16 rounded-lg object-cover bg-black border border-white/5 shrink-0" />
+                        <div className="min-w-0 text-left">
+                          <span className="px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">📄 {p.category || "Resource"}</span>
+
+                          <span className={`ml-2 px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase ${
+                            p.isPublished !== false
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              : "bg-red-500/10 text-red-400 border border-red-500/20"
+                          }`}>
+                            {p.isPublished !== false ? "● Published" : "○ Draft/Unpublished"}
+                          </span>
+
+                          <h3 className="font-extrabold text-xs text-white mt-1.5 truncate">{p.title}</h3>
+                          <p className="text-[10px] text-gray-500 font-mono mt-0.5">PKR {p.price.toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center border-t border-white/5 pt-3.5 mt-2 text-xs">
+                        <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Digital Resource Active</span>
+                        </span>
+
+                        <div className="flex gap-2 items-center">
+                          <button
+                            onClick={() => handleTogglePdfPublish(p)}
+                            className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                              p.isPublished !== false
+                                ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
+                                : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
+                            }`}
+                          >
+                            {p.isPublished !== false ? "Unpublish" : "Publish"}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setPdfTitle(p.title);
+                              setPdfPrice(p.price.toString());
+                              setPdfCategory(p.category || "Forex Trading");
+                              setPdfDesc(p.description);
+                              setPdfThumb(p.thumbnailUrl);
+                              setPdfFileUrl(p.pdfUrl || "");
+                              setPdfPreviewUrl(p.previewUrl || "");
+                              setPdfFileSource("url");
+                              setPdfPreviewSource("url");
+                              setEditingPdfId(p.id);
+                              setAdminSubTab("add_pdf");
+                              addToast(`Editing "${p.title}" in PDF Construction`, "info");
+                            }}
+                            className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded font-bold transition text-[10px] border border-white/5"
+                          >
+                            Edit Properties
+                          </button>
+
+                          <button
+                            onClick={() => handleDeletePdfAdmin(p.id)}
+                            className="p-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white rounded transition"
+                            aria-label="Delete PDF"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3c. ADD / EDIT PDF RESOURCE GENERATOR */}
+          {adminSubTab === "add_pdf" && (
+            <div className="space-y-6 animate-in fade-in duration-300 text-left max-w-2xl">
+              <div className="border-b border-white/5 pb-4 flex justify-between items-center">
+                <div>
+                  <h1 className="text-2xl font-extrabold text-white">
+                    {editingPdfId ? "Modify PDF Resource" : "Publish PDF Resource"}
+                  </h1>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {editingPdfId
+                      ? "Refine the title, description, thumbnail, price and document for this resource."
+                      : "Upload a premium PDF, set its title, description, thumbnail and price, then publish it."
+                    }
+                  </p>
+                </div>
+                {editingPdfId && (
+                  <button
+                    type="button"
+                    onClick={() => { resetPdfForm(); addToast("Editing reset. Form ready for new PDF creation", "info"); }}
+                    className="px-3 py-1.5 bg-[#ef4444]/10 text-red-400 border border-red-500/25 hover:bg-red-500 hover:text-white rounded text-xs transition cursor-pointer"
+                  >
+                    Cancel Editing
+                  </button>
+                )}
+              </div>
+
+              {isUploadingMedia && (
+                <div className="p-4 bg-brand-purple/10 border border-brand-purple/20 rounded-xl space-y-2 animate-pulse">
+                  <div className="flex justify-between items-center text-xs font-mono">
+                    <span className="text-brand-purple font-bold uppercase">Uploading assets to cloud memory...</span>
+                    <span className="text-white font-bold">{mediaUploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-brand-purple h-full transition-all duration-300" style={{ width: `${mediaUploadProgress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleRegisterPdfAdmin} className="p-5 rounded-xl bg-brand-card border border-white/5 space-y-4">
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">PDF Title Label</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. SMC Trading Blueprint eBook"
+                      value={pdfTitle}
+                      onChange={(e) => setPdfTitle(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple/50"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Category Discipline</label>
+                    <select
+                      value={pdfCategory}
+                      onChange={(e) => setPdfCategory(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                    >
+                      <option value="Forex Trading">Forex Trading</option>
+                      <option value="Crypto Trading">Crypto Trading</option>
+                      <option value="Stock Market">Stock Market</option>
+                      <option value="Technical Analysis">Technical Analysis</option>
+                      <option value="Risk Management">Risk Management</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Price (PKR)</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="e.g. 1499"
+                      value={pdfPrice}
+                      onChange={(e) => setPdfPrice(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Thumbnail Link</label>
+                    <input
+                      type="text"
+                      placeholder="Image URL"
+                      value={pdfThumb}
+                      onChange={(e) => setPdfThumb(e.target.value)}
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Description</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Describe what this premium resource covers..."
+                    value={pdfDesc}
+                    onChange={(e) => setPdfDesc(e.target.value)}
+                    className="w-full bg-black/50 border border-white/10 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-brand-purple/30"
+                  />
+                </div>
+
+                {/* PDF DOCUMENT (required) */}
+                <div className="space-y-2 bg-black/20 p-3 rounded-lg border border-white/5">
+                  <div className="flex justify-between items-center bg-black/35 p-1 rounded">
+                    <span className="text-[9px] font-bold uppercase font-mono text-gray-400 pl-1">
+                      📄 Premium PDF Document (buyers only)
+                    </span>
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => setPdfFileSource("upload")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfFileSource === "upload" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Upload PDF</button>
+                      <button type="button" onClick={() => setPdfFileSource("url")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfFileSource === "url" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Paste Link</button>
+                    </div>
+                  </div>
+                  {pdfFileSource === "upload" ? (
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const url = await uploadFile(file);
+                            setPdfFileUrl(url);
+                            addToast(`Successfully uploaded PDF "${file.name}"!`, "success");
+                          } catch (err) {
+                            addToast("PDF upload failure.", "error");
+                          }
+                        }
+                      }}
+                      className="w-full bg-black/45 border border-white/5 text-xs text-gray-404 px-3 py-1.5 rounded cursor-pointer"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Direct secure PDF link URL"
+                      value={pdfFileUrl}
+                      onChange={(e) => setPdfFileUrl(e.target.value)}
+                      className="w-full bg-black/60 border border-white/10 rounded px-3 py-1.5 text-xs text-white focus:outline-none"
+                    />
+                  )}
+                  {pdfFileUrl && <p className="text-[9px] text-emerald-400 font-mono italic">✓ Bound document: {pdfFileUrl}</p>}
+                </div>
+
+                {/* PREVIEW PDF (optional) */}
+                <div className="space-y-2 bg-black/20 p-3 rounded-lg border border-white/5">
+                  <div className="flex justify-between items-center bg-black/35 p-1 rounded">
+                    <span className="text-[9px] font-bold uppercase font-mono text-gray-400 pl-1">
+                      👁️ Preview Pages (optional, shown to everyone)
+                    </span>
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => setPdfPreviewSource("upload")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfPreviewSource === "upload" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Upload PDF</button>
+                      <button type="button" onClick={() => setPdfPreviewSource("url")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfPreviewSource === "url" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Paste Link</button>
+                    </div>
+                  </div>
+                  {pdfPreviewSource === "upload" ? (
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const url = await uploadFile(file);
+                            setPdfPreviewUrl(url);
+                            addToast(`Successfully uploaded preview "${file.name}"!`, "success");
+                          } catch (err) {
+                            addToast("Preview upload failure.", "error");
+                          }
+                        }
+                      }}
+                      className="w-full bg-black/45 border border-white/5 text-xs text-gray-404 px-3 py-1.5 rounded cursor-pointer"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Direct preview PDF link URL"
+                      value={pdfPreviewUrl}
+                      onChange={(e) => setPdfPreviewUrl(e.target.value)}
+                      className="w-full bg-black/60 border border-white/10 rounded px-3 py-1.5 text-xs text-white focus:outline-none"
+                    />
+                  )}
+                  {pdfPreviewUrl && <p className="text-[9px] text-emerald-400 font-mono italic">✓ Bound preview: {pdfPreviewUrl}</p>}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingPdf}
+                  className="w-full py-3 bg-brand-purple hover:bg-brand-violet text-white text-xs font-extrabold rounded-lg transition overflow-hidden shadow-lg hover:scale-[1.01] cursor-pointer"
+                >
+                  {isSubmittingPdf
+                    ? "Baking resource parameters..."
+                    : (editingPdfId ? "UPDATE PDF RESOURCE" : "PUBLISH PDF RESOURCE")
                   }
                 </button>
               </form>

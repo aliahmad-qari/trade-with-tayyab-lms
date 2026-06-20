@@ -15,3 +15,28 @@ services:
       # Server-side Gemini key (set the actual value in the Render dashboard).
       - key: GEMINI_API_KEY
         sync: false
+      # MongoDB Atlas connection string.
+      - key: MONGODB_URI
+        sync: false
+      # Secret used to sign/verify JWT auth tokens.
+      - key: JWT_SECRET
+        sync: false
+      # Deployed Vercel frontend origin, used for CORS allow-list.
+      - key: FRONTEND_URL
+        sync: false
+      # Cloudinary credentials for admin media uploads.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # WPay payment gateway credentials.
+      - key: WPAY_MERCHANT_ID
+        sync: false
+      - key: WPAY_USERNAME
+        sync: false
+      - key: WPAY_PASSWORD
+        sync: false
+      - key: WPAY_SIGNATURE_SALT
+        sync: false

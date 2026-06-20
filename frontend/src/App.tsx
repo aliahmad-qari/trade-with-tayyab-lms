@@ -5,13 +5,15 @@ import AICoachModal from "./components/AICoachModal";
 import VideoPlayer from "./components/VideoPlayer";
 import StudentPanel from "./components/StudentPanel";
 import AdminPanel from "./components/AdminPanel";
-import { Course, Order, User, SuspiciousLogin } from "./types";
+import { Course, Order, User, SuspiciousLogin, PdfProduct } from "./types";
 // @ts-ignore
 import wingoPatternLight from "./assets/images/wingo_pattern_light_1781678462385.jpg";
 // @ts-ignore
 import wingoSuccess from "./assets/images/wingo_success_1781678481995.jpg";
 // @ts-ignore
 import wingoPatternDark from "./assets/images/wingo_pattern_dark_1781678502787.jpg";
+// @ts-ignore
+import tradePic from "./assets/images/tradepic.png";
 import { 
   Award, TrendingUp, Coins, LineChart, Compass, HelpCircle, 
   CheckCircle, BookOpenText, Globe, CreditCard, 
@@ -34,7 +36,10 @@ export default function App() {
   
   // Data State
   const [courses, setCourses] = useState<Course[]>([]);
+  const [pdfs, setPdfs] = useState<PdfProduct[]>([]);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState<string[]>([]);
+  const [purchasedPdfIds, setPurchasedPdfIds] = useState<string[]>([]);
+  const [selectedPdf, setSelectedPdf] = useState<PdfProduct | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem("tayyab_token"));
   const [loading, setLoading] = useState<boolean>(true);
@@ -59,8 +64,9 @@ export default function App() {
   const [contactSubject, setContactSubject] = useState("");
   const [contactMessage, setContactMessage] = useState("");
 
-  // Payment Form Trigger
-  const [paymentModalCourse, setPaymentModalCourse] = useState<Course | null>(null);
+  // Payment Form Trigger — unified for courses and premium PDFs so the exact
+  // same modal + workflow serves both product kinds.
+  const [paymentModalProduct, setPaymentModalProduct] = useState<{ kind: "course" | "pdf"; id: string; title: string; price: number } | null>(null);
   const [payMethod, setPayMethod] = useState<string>("EasyPaisa");
   const [payNumber, setPayNumber] = useState("");
   const [wpayMerchantId, setWpayMerchantId] = useState("2794");
@@ -95,12 +101,14 @@ export default function App() {
   useEffect(() => {
     fetchSessionUser();
     fetchCourses();
+    fetchPdfs();
   }, [authToken]);
 
   const fetchSessionUser = async () => {
     if (!authToken) {
       setCurrentUser(null);
       setEnrolledCourseIds([]);
+      setPurchasedPdfIds([]);
       setLoading(false);
       return;
     }
@@ -150,6 +158,20 @@ export default function App() {
     }
   };
 
+  const fetchPdfs = async () => {
+    try {
+      const response = await fetch("/api/pdfs", {
+        headers: authToken ? { "Authorization": `Bearer ${authToken}` } : undefined
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPdfs(data.pdfs || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const fetchEnrollments = async () => {
     if (!authToken) return;
     try {
@@ -159,6 +181,7 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setEnrolledCourseIds(data.enrolled || []);
+        setPurchasedPdfIds(data.purchasedPdfs || []);
       }
     } catch (e) {
       console.error(e);
@@ -310,6 +333,7 @@ export default function App() {
       setAuthToken(null);
       setCurrentUser(null);
       setEnrolledCourseIds([]);
+      setPurchasedPdfIds([]);
       setHasDeviceWarning(false);
       addToast("Logged out successfully.", "info");
       changeTab("home");
@@ -329,13 +353,29 @@ export default function App() {
       changeTab("dashboard");
       return;
     }
-    setPaymentModalCourse(course);
+    setPaymentModalProduct({ kind: "course", id: course.id, title: course.title, price: course.price });
+    setPayNumber("");
+  };
+
+  // Premium PDF purchase — reuses the exact same payment modal/workflow.
+  const handlePdfPurchaseInitiation = (pdf: PdfProduct) => {
+    if (!currentUser) {
+      addToast("Please create an account or sign in to purchase premium resources.", "warning");
+      changeTab("login");
+      return;
+    }
+    if (purchasedPdfIds.includes(pdf.id)) {
+      addToast("You already own this resource!", "info");
+      changeTab("dashboard");
+      return;
+    }
+    setPaymentModalProduct({ kind: "pdf", id: pdf.id, title: pdf.title, price: pdf.price });
     setPayNumber("");
   };
 
   const submitPaymentForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!paymentModalCourse) return;
+    if (!paymentModalProduct) return;
     if (!payNumber) {
       addToast("Please input your mobile account number.", "error");
       return;
@@ -343,11 +383,12 @@ export default function App() {
 
     try {
       const isWpay = payMethod === "WPay";
-      const targetEndpoint = isWpay 
-        ? `/api/courses/${paymentModalCourse.id}/enroll-wpay` 
-        : `/api/courses/${paymentModalCourse.id}/enroll`;
+      const base = paymentModalProduct.kind === "pdf" ? "pdfs" : "courses";
+      const targetEndpoint = isWpay
+        ? `/api/${base}/${paymentModalProduct.id}/enroll-wpay`
+        : `/api/${base}/${paymentModalProduct.id}/enroll`;
 
-      const requestBody = isWpay 
+      const requestBody = isWpay
         ? {
             merchantId: wpayMerchantId,
             username: wpayUsername,
@@ -371,9 +412,10 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         addToast(data.message, "success");
-        setPaymentModalCourse(null);
-        // Instant Client refresh to show course inside my courses!
+        setPaymentModalProduct(null);
+        // Instant Client refresh to show the purchase inside the dashboard!
         await fetchEnrollments();
+        await fetchPdfs();
         changeTab("dashboard");
       } else {
         addToast(data.message, "error");
@@ -680,7 +722,7 @@ export default function App() {
                       
                       <div className="relative h-full w-full rounded-2xl overflow-hidden border border-white/10 bg-brand-card flex items-center justify-center p-3">
                         <img 
-                          src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80" 
+                          src={tradePic}
                           alt="Tayyab Mentor representation" 
                           className="h-full w-full object-cover rounded-xl border border-white/5"
                         />
@@ -1032,6 +1074,84 @@ export default function App() {
                     })}
                   </div>
                 )}
+
+                {/* PREMIUM PDF / DIGITAL RESOURCES MARKETPLACE */}
+                {pdfs.filter(p => p.isPublished !== false).length > 0 && (
+                  <div className="space-y-6 pt-6 border-t border-white/5">
+                    <div className="text-left">
+                      <h1 className="text-2xl font-extrabold text-white">Premium PDFs & Digital Resources</h1>
+                      <p className="text-xs text-gray-400 mt-1">Purchase exclusive trading eBooks, checklists and cheat sheets curated by Tayyab.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {pdfs.filter(p => p.isPublished !== false).map((pdf) => {
+                        const isPurchased = purchasedPdfIds.includes(pdf.id);
+                        return (
+                          <div
+                            key={pdf.id}
+                            className="rounded-xl overflow-hidden glass-panel border border-white/5 flex flex-col justify-between group h-full bg-brand-card"
+                          >
+                            <div className="relative aspect-video overflow-hidden">
+                              <img
+                                src={pdf.thumbnailUrl || "https://images.unsplash.com/photo-1554260570-9140fd3b7614?auto=format&fit=crop&w=600&q=80"}
+                                alt={pdf.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute top-2.5 left-2.5 px-2 py-1 bg-black/80 backdrop-blur-md rounded text-[9px] font-bold uppercase border border-emerald-500/30 text-emerald-500">
+                                📄 {pdf.category || "Resource"}
+                              </div>
+                            </div>
+
+                            <div className="p-4 flex-grow flex flex-col justify-between space-y-3">
+                              <div className="space-y-1.5 text-left">
+                                <h3 className="font-extrabold text-[#ffffff] text-sm leading-snug group-hover:text-emerald-400 transition-colors">
+                                  {pdf.title}
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-mono">By Instructor: Tayyab</p>
+                                <p className="text-xs text-gray-300 leading-snug line-clamp-2">{pdf.description}</p>
+                              </div>
+
+                              <div className="space-y-3 pt-2 text-left">
+                                <div className="border-t border-white/5 pt-3.5 flex items-center justify-between">
+                                  <div className="text-left">
+                                    <span className="text-[9px] text-gray-550 block font-mono uppercase">Price</span>
+                                    <span className="text-base font-extrabold text-amber-400 tracking-tight">
+                                      {pdf.price.toLocaleString()} PKR
+                                    </span>
+                                  </div>
+
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      onClick={() => { setSelectedPdf(pdf); changeTab("pdfdetails"); }}
+                                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+                                    >
+                                      Details
+                                    </button>
+                                    {isPurchased ? (
+                                      <button
+                                        onClick={() => changeTab("dashboard")}
+                                        className="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold transition cursor-pointer"
+                                      >
+                                        Read
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handlePdfPurchaseInitiation(pdf)}
+                                        className="px-3.5 py-1.5 bg-brand-purple hover:bg-brand-violet text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                                      >
+                                        Buy Now
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1170,6 +1290,122 @@ export default function App() {
                     </button>
                   )}
                   
+                  <p className="text-[10px] text-gray-500 text-center font-mono leading-relaxed">
+                    Pakistan Bank Transfers managed securely by admin reviews on easy order submission IDs.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 3b. PDF / DIGITAL RESOURCE DETAILS PANEL */}
+            {activeTab === "pdfdetails" && selectedPdf && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-300">
+                {/* Left pane: pdf info + preview */}
+                <div className="lg:col-span-8 space-y-6 text-left">
+                  <button
+                    onClick={() => changeTab("courses")}
+                    className="text-xs text-brand-violet hover:text-white flex items-center gap-1.5 font-mono uppercase cursor-pointer"
+                  >
+                    ← Back to Listing
+                  </button>
+
+                  <div className="space-y-4">
+                    <span className="px-2.5 py-1 rounded text-xs font-mono font-bold uppercase border bg-emerald-500/10 text-emerald-400 border-emerald-500/25">
+                      📄 {selectedPdf.category || "Digital Resource"}
+                    </span>
+                    <h1 className="text-2xl sm:text-4xl font-extrabold text-white leading-tight">
+                      {selectedPdf.title}
+                    </h1>
+                    <p className="text-gray-350 text-xs leading-relaxed whitespace-pre-line font-sans">
+                      {selectedPdf.description}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl glass-panel space-y-4">
+                    <h2 className="text-xs font-extrabold text-white tracking-wider uppercase font-mono border-b border-white/5 pb-2">Meet Your Instructor</h2>
+                    <div className="flex gap-4 items-center">
+                      <div className="w-12 h-12 bg-black rounded-xl overflow-hidden border border-brand-purple/40 shrink-0">
+                        <img
+                          src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80"
+                          alt="Tayyab"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-white font-bold font-sans text-xs">Tayyab • Pakistan Trading Mentor</p>
+                        <p className="text-[11px] text-gray-405">Forex SMC & Cryptocurrencies volume Analyst with +5 years offline trading records.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preview pages */}
+                  <div className="space-y-4">
+                    <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <BookOpenText className="w-5 h-5 text-brand-violet" />
+                      <span>Document Preview</span>
+                    </h2>
+
+                    {selectedPdf.previewUrl ? (
+                      <div className="rounded-xl border border-white/5 overflow-hidden bg-[#1e2330] aspect-[4/3]">
+                        <iframe
+                          src={`${selectedPdf.previewUrl}#toolbar=0&navpanes=0`}
+                          className="w-full h-full border-none"
+                          title="PDF Preview"
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-10 rounded-xl border border-white/5 bg-brand-card/50 text-center space-y-2">
+                        <Lock className="w-8 h-8 text-gray-500 mx-auto" />
+                        <p className="text-xs text-gray-400">No free preview available. Purchase to unlock the full secure document.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right side: purchase box widget */}
+                <div className="lg:col-span-4 rounded-2xl glass-panel border border-white/10 p-5 space-y-5 text-left sticky top-24">
+                  <div className="aspect-video rounded-xl overflow-hidden border border-white/10 relative">
+                    <img src={selectedPdf.thumbnailUrl} alt={selectedPdf.title} className="w-full h-full object-cover" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-450 font-mono uppercase tracking-widest block font-bold">Premium Resource Access</p>
+                    <p className="text-2xl font-extrabold text-amber-400 tracking-tight leading-none font-mono">
+                      {selectedPdf.price.toLocaleString()} PKR
+                    </p>
+                  </div>
+
+                  <ul className="text-xs text-gray-300 space-y-2 pb-2 border-b border-white/5">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Full secure watermarked PDF access</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Read instantly in your dashboard</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Lifetime verification browser logons</span>
+                    </li>
+                  </ul>
+
+                  {purchasedPdfIds.includes(selectedPdf.id) ? (
+                    <button
+                      onClick={() => changeTab("dashboard")}
+                      className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs tracking-wide transition cursor-pointer"
+                    >
+                      Open in Student Dashboard
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handlePdfPurchaseInitiation(selectedPdf)}
+                      className="w-full py-3 rounded-xl bg-brand-purple hover:bg-brand-violet text-white font-bold text-xs tracking-wide transition glow-dot-purple cursor-pointer"
+                    >
+                      Buy using EasyPaisa / JazzCash
+                    </button>
+                  )}
+
                   <p className="text-[10px] text-gray-500 text-center font-mono leading-relaxed">
                     Pakistan Bank Transfers managed securely by admin reviews on easy order submission IDs.
                   </p>
@@ -1411,7 +1647,9 @@ export default function App() {
               <StudentPanel
                 currentUser={currentUser}
                 courses={courses}
+                pdfs={pdfs}
                 enrolledCourseIds={enrolledCourseIds}
+                purchasedPdfIds={purchasedPdfIds}
                 authToken={authToken}
                 addToast={addToast}
                 onLogout={handleLogoutAction}
@@ -1441,6 +1679,8 @@ export default function App() {
               <AdminPanel
                 currentUser={currentUser}
                 courses={courses}
+                pdfs={pdfs}
+                fetchPdfs={fetchPdfs}
                 adminStats={adminStats}
                 adminUsers={adminUsers}
                 adminOrders={adminOrders}
@@ -1618,7 +1858,7 @@ export default function App() {
       </div>
 
       {/* EASYPAISA / JAZZCASH / WPAY POPUP ORDER MODAL */}
-      {paymentModalCourse && (
+      {paymentModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans">
           <div className="relative w-full max-w-md bg-brand-card rounded-2xl border border-brand-purple/30 p-6 space-y-5 text-left text-xs">
             <h3 className="text-sm font-bold text-white uppercase font-mono tracking-wider flex items-center justify-between">
@@ -1631,7 +1871,7 @@ export default function App() {
             </h3>
             
             <p className="text-gray-400">
-              You are purchasing "{paymentModalCourse.title}" for **{paymentModalCourse.price.toLocaleString()} PKR**. Select your preferred checkout option below:
+              You are purchasing "{paymentModalProduct.title}" for **{paymentModalProduct.price.toLocaleString()} PKR**. Select your preferred checkout option below:
             </p>
 
             {payMethod !== "WPay" ? (
@@ -1755,7 +1995,7 @@ export default function App() {
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={() => setPaymentModalCourse(null)}
+                  onClick={() => setPaymentModalProduct(null)}
                   className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer"
                 >
                   Cancel

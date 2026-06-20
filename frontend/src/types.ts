@@ -42,12 +42,27 @@ export interface Course {
   isPublished?: boolean;
 }
 
+export interface PdfProduct {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  thumbnailUrl: string;
+  pdfUrl?: string; // only present for buyers
+  previewUrl?: string;
+  category?: string;
+  isPublished?: boolean;
+  createdAt?: string;
+  hasAccess?: boolean;
+}
+
 export interface Order {
   id: string;
   userId: string;
   userEmail: string;
   courseId: string;
   courseTitle: string;
+  productType?: "course" | "pdf";
   amount: number;
   paymentMethod: string;
   accountNumber: string;

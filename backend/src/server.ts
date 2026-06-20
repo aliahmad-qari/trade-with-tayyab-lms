@@ -1,29 +1,40 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import cors from "cors";
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
 import { GoogleGenAI } from "@google/genai";
 import { fileURLToPath } from "url";
 
 const PORT = Number(process.env.PORT) || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
+const BCRYPT_ROUNDS = 10;
+
+// WPay gateway secrets (env-driven; literals kept only as dev fallbacks)
+const WPAY_MERCHANT_ID = process.env.WPAY_MERCHANT_ID || "2794";
+const WPAY_USERNAME = process.env.WPAY_USERNAME || "patlo222";
+const WPAY_PASSWORD = process.env.WPAY_PASSWORD || "okok888";
+const WPAY_SIGNATURE_SALT = process.env.WPAY_SIGNATURE_SALT || "okok888";
+
+// Cloudinary configuration for admin media uploads (no-op if env not set)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// In-memory multer storage; buffers are streamed straight to Cloudinary.
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Handle ES module standard filenames
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Double check path resolutions to find current db_data.json
-const getDbFilePath = () => {
-  const rootPath = path.join(process.cwd(), "db_data.json");
-  const backendSrcPath = path.join(__dirname, "db_data.json");
-  const backendRootPath = path.join(__dirname, "../db_data.json");
-
-  if (fs.existsSync(rootPath)) return rootPath;
-  if (fs.existsSync(backendSrcPath)) return backendSrcPath;
-  if (fs.existsSync(backendRootPath)) return backendRootPath;
-
-  return rootPath; // fallback
-};
-const DB_FILE = getDbFilePath();
 
 // Helper and State Setup
 interface User {
@@ -66,12 +77,30 @@ interface Resource {
   size?: string;
 }
 
+// Premium PDF / digital resource product. Purchased through the exact same
+// order + payment workflow as courses (see Order.productType below).
+interface PdfProduct {
+  id: string;
+  title: string;
+  description: string;
+  price: number; // PKR
+  thumbnailUrl: string;
+  pdfUrl: string; // full document, only delivered to buyers
+  previewUrl?: string; // optional free preview pages
+  category?: string;
+  isPublished?: boolean;
+  createdAt?: string;
+}
+
 interface Order {
   id: string;
   userId: string;
   userEmail: string;
+  // For PDF products these reuse the same fields (id/title of the PDF) so the
+  // entire existing order/payment pipeline keeps working unchanged.
   courseId: string;
   courseTitle: string;
+  productType?: "course" | "pdf"; // defaults to "course" when absent
   amount: number;
   paymentMethod: string;
   accountNumber: string;
@@ -102,6 +131,7 @@ interface SessionLog {
 interface Database {
   users: User[];
   courses: Course[];
+  pdfs: PdfProduct[];
   orders: Order[];
   progress: UserProgress[];
   sessions: SessionLog[];
@@ -172,6 +202,34 @@ const DEFAULT_COURSES: Course[] = [
   }
 ];
 
+// Seed premium PDF / digital resource products.
+const DEFAULT_PDFS: PdfProduct[] = [
+  {
+    id: "pdf-1",
+    title: "SMC Complete Trading Blueprint (eBook)",
+    description: "A 60-page premium guide covering Smart Money Concepts end-to-end: liquidity sweeps, order blocks, mitigation entries, premium/discount zones and a complete trading-plan template you can apply immediately.",
+    price: 1499,
+    thumbnailUrl: "https://images.unsplash.com/photo-1554260570-9140fd3b7614?auto=format&fit=crop&w=800&q=80",
+    pdfUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    previewUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    category: "Forex Trading",
+    isPublished: true,
+    createdAt: new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString()
+  },
+  {
+    id: "pdf-2",
+    title: "Crypto Scalping Rulebook & Checklist",
+    description: "The exact scalping checklist used on Binance & Bybit — VWAP zones, volume profile POC reads, leverage controls and a printable pre-trade checklist for fast, disciplined execution.",
+    price: 999,
+    thumbnailUrl: "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?auto=format&fit=crop&w=800&q=80",
+    pdfUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    previewUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    category: "Crypto Trading",
+    isPublished: true,
+    createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
+  }
+];
+
 const INITIAL_DB: Database = {
   users: [
     {
@@ -194,6 +252,7 @@ const INITIAL_DB: Database = {
     }
   ],
   courses: DEFAULT_COURSES,
+  pdfs: DEFAULT_PDFS,
   orders: [
     {
       id: "order-1",
@@ -201,6 +260,7 @@ const INITIAL_DB: Database = {
       userEmail: "tayyab@trade.com",
       courseId: "course-1",
       courseTitle: "Forex Trading Masterclass (Price Action & SMC)",
+      productType: "course",
       amount: 3999,
       paymentMethod: "EasyPaisa",
       accountNumber: "03169820955",
@@ -220,34 +280,92 @@ const INITIAL_DB: Database = {
   sessions: []
 };
 
-// Database utilities
-function loadDB(): Database {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(INITIAL_DB, null, 2), "utf-8");
-    return INITIAL_DB;
+// ----------------------------------------------------------------------------
+// MongoDB storage layer.
+//
+// The whole application state (the `Database` object) is persisted as a single
+// document in the `appstate` collection. This keeps every route's logic
+// unchanged (they still mutate the in-memory `db` object) while making the data
+// survive restarts/redeploys — unlike the old ephemeral db_data.json file.
+//
+// Dev:  MONGODB_URI points to a local MongoDB instance.
+// Prod: MONGODB_URI points to MongoDB Atlas.
+// ----------------------------------------------------------------------------
+const AppStateSchema = new mongoose.Schema({ data: { type: Object } }, { minimize: false });
+const AppStateModel = mongoose.model("AppState", AppStateSchema, "appstate");
+
+// In-memory working copy used by all route handlers.
+let db: Database = INITIAL_DB;
+
+async function connectDB() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("MONGODB_URI is not set. Configure it in your .env (dev) or Render dashboard (prod).");
   }
-  try {
-    const content = fs.readFileSync(DB_FILE, "utf-8");
-    return JSON.parse(content);
-  } catch (e) {
-    console.error("Error reading database file, resetting to initial seed:", e);
-    return INITIAL_DB;
-  }
+  await mongoose.connect(uri);
+  console.log("🗄️  Connected to MongoDB");
 }
 
-function saveDB(dbData: Database) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2), "utf-8");
-  } catch (e) {
-    console.error("Error saving database file:", e);
+// Seed the initial database, hashing the seed users' plain-text passwords.
+async function buildSeedDB(): Promise<Database> {
+  const seed: Database = JSON.parse(JSON.stringify(INITIAL_DB));
+  for (const user of seed.users) {
+    user.passwordHash = await bcrypt.hash(user.passwordHash, BCRYPT_ROUNDS);
   }
+  return seed;
 }
 
-// Instantiate database
-let db = loadDB();
+// Load state from Mongo into the in-memory `db`; seed on first run.
+async function loadDB(): Promise<Database> {
+  const existing = await AppStateModel.findOne().lean();
+  if (existing && (existing as any).data) {
+    db = (existing as any).data as Database;
+    // Backfill collections added after this state was first persisted, so older
+    // deployments gain PDF support without losing existing data.
+    if (!Array.isArray(db.pdfs)) {
+      db.pdfs = JSON.parse(JSON.stringify(DEFAULT_PDFS));
+      await saveDB(db);
+    }
+    return db;
+  }
+  db = await buildSeedDB();
+  await AppStateModel.create({ data: db });
+  console.log("🌱 Seeded initial database state in MongoDB");
+  return db;
+}
+
+// Persist the current in-memory `db` snapshot back to Mongo.
+async function saveDB(dbData: Database) {
+  try {
+    await AppStateModel.replaceOne({}, { data: dbData }, { upsert: true });
+  } catch (e) {
+    console.error("Error saving database to MongoDB:", e);
+  }
+}
 
 // Create application
 const app = express();
+
+// CORS: allow the deployed Vercel frontend plus local development origins.
+const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : undefined;
+const allowedOrigins = [
+  frontendUrl,
+  "http://localhost:3000",
+  "http://localhost:5173",
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow same-origin / non-browser requests (no Origin header) and whitelisted origins.
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
+
 app.use(express.json());
 
 // Device and IP Parsing middleware
@@ -277,8 +395,18 @@ function getAuthenticatedUser(req: express.Request): User | null {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.split(" ")[1];
-  const [userId, deviceId] = token.split("::");
-  
+
+  // Verify the signed JWT; reject forged/expired tokens.
+  let userId: string;
+  let deviceId: string;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: string; deviceId: string };
+    userId = payload.userId;
+    deviceId = payload.deviceId;
+  } catch {
+    return null;
+  }
+
   const user = db.users.find(u => u.id === userId);
   if (!user || user.isBlocked) return null;
 
@@ -294,9 +422,9 @@ function getAuthenticatedUser(req: express.Request): User | null {
 // ----------------------------------------------------
 
 // AUTHENTICATION APIs
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const { name, email, password } = req.body;
-  
+
   if (!name || !email || !password) {
     res.status(400).json({ message: "All fields are required" });
     return;
@@ -312,19 +440,19 @@ app.post("/api/auth/register", (req, res) => {
     id: `user_${Math.random().toString(36).substring(2, 9)}`,
     name,
     email: email.toLowerCase(),
-    passwordHash: password, // Plain-text demo simulation
+    passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
     profileImg: `https://images.unsplash.com/photo-${1535000000000 + Math.floor(Math.random() * 100000)}?auto=format&fit=crop&w=150&q=80`,
     isBlocked: false,
     role: "student"
   };
 
   db.users.push(newUser);
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: "Registration successful! You can now log in.", user: { id: newUser.id, name: newUser.name, email: newUser.email } });
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   const client = (req as any).clientInfo;
 
@@ -334,7 +462,7 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || user.passwordHash !== password) {
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     res.status(400).json({ message: "Invalid email or password" });
     return;
   }
@@ -379,9 +507,13 @@ app.post("/api/auth/login", (req, res) => {
   };
 
   db.sessions.push(newSession);
-  saveDB(db);
+  await saveDB(db);
 
-  const token = `${user.id}::${client.deviceId}`;
+  const token = jwt.sign(
+    { userId: user.id, deviceId: client.deviceId },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 
   res.json({
     message: "Login successful",
@@ -397,18 +529,21 @@ app.post("/api/auth/login", (req, res) => {
   });
 });
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1];
-    const [userId, deviceId] = token.split("::");
-    
-    db.sessions.forEach(s => {
-      if (s.userId === userId && s.deviceId === deviceId) {
-        s.isActive = false;
-      }
-    });
-    saveDB(db);
+    try {
+      const { userId, deviceId } = jwt.verify(token, JWT_SECRET) as { userId: string; deviceId: string };
+      db.sessions.forEach(s => {
+        if (s.userId === userId && s.deviceId === deviceId) {
+          s.isActive = false;
+        }
+      });
+      await saveDB(db);
+    } catch {
+      // Invalid/expired token: nothing to deactivate, treat as already logged out.
+    }
   }
   res.json({ message: "Logged out successfully" });
 });
@@ -430,7 +565,7 @@ app.get("/api/auth/me", (req, res) => {
   });
 });
 
-app.post("/api/auth/profile/update", (req, res) => {
+app.post("/api/auth/profile/update", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj) {
     res.status(401).json({ message: "Unauthorized" });
@@ -439,12 +574,12 @@ app.post("/api/auth/profile/update", (req, res) => {
 
   const { name, profileImg, newPassword } = req.body;
   const user = db.users.find(u => u.id === userObj.id);
-  
+
   if (user) {
     if (name) user.name = name;
     if (profileImg) user.profileImg = profileImg;
-    if (newPassword) user.passwordHash = newPassword;
-    saveDB(db);
+    if (newPassword) user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await saveDB(db);
     res.json({ message: "Profile updated successfully!", user: { id: user.id, name: user.name, email: user.email, role: user.role, profileImg: user.profileImg } });
   } else {
     res.status(404).json({ message: "User not found" });
@@ -467,14 +602,14 @@ app.get("/api/sessions/check", (req, res) => {
   });
 });
 
-app.post("/api/sessions/clear-others", (req, res) => {
+app.post("/api/sessions/clear-others", async (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
   const client = (req as any).clientInfo;
-  
+
   let clearedCount = 0;
   db.sessions.forEach(s => {
     if (s.userId === user.id && s.isActive && s.deviceId !== client.deviceId) {
@@ -483,7 +618,7 @@ app.post("/api/sessions/clear-others", (req, res) => {
     }
   });
   if (clearedCount > 0) {
-    saveDB(db);
+    await saveDB(db);
   }
   res.json({ message: `Successfully logged out ${clearedCount} other active devices.`, clearedCount });
 });
@@ -502,8 +637,163 @@ app.get("/api/courses/:id", (req, res) => {
   res.json({ course });
 });
 
+// PREMIUM PDF / DIGITAL RESOURCE APIs
+// Public listing/detail intentionally omit the full pdfUrl so non-buyers only
+// ever receive metadata + the optional preview. The protected document URL is
+// delivered exclusively through /api/pdfs/:id/secure-access below.
+function toPublicPdf(p: PdfProduct, hasAccess: boolean) {
+  const { pdfUrl, ...rest } = p;
+  return { ...rest, pdfUrl: hasAccess ? pdfUrl : "", hasAccess };
+}
+
+app.get("/api/pdfs", (req, res) => {
+  const user = getAuthenticatedUser(req);
+  const ownedIds = user
+    ? db.orders.filter(o => o.userId === user.id && o.productType === "pdf" && o.status === "approved").map(o => o.courseId)
+    : [];
+  const pdfs = db.pdfs.map(p => toPublicPdf(p, ownedIds.includes(p.id)));
+  res.json({ pdfs });
+});
+
+app.get("/api/pdfs/:id", (req, res) => {
+  const pdf = db.pdfs.find(p => p.id === req.params.id);
+  if (!pdf) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+  const user = getAuthenticatedUser(req);
+  const hasAccess = !!user && db.orders.some(o => o.userId === user.id && o.courseId === pdf.id && o.productType === "pdf" && o.status === "approved");
+  res.json({ pdf: toPublicPdf(pdf, hasAccess) });
+});
+
+// Access-controlled delivery of the full document URL (buyers only).
+app.get("/api/pdfs/:id/secure-access", (req, res) => {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    res.status(401).json({ message: "Please log in to open this resource." });
+    return;
+  }
+  const pdf = db.pdfs.find(p => p.id === req.params.id);
+  if (!pdf) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+  const hasAccess = db.orders.some(o => o.userId === user.id && o.courseId === pdf.id && o.productType === "pdf" && o.status === "approved");
+  if (!hasAccess) {
+    res.status(403).json({ message: "This resource is locked. Please purchase to unlock." });
+    return;
+  }
+  res.json({ pdfUrl: pdf.pdfUrl, title: pdf.title });
+});
+
+// MANUAL PAYMENT enrollment for a PDF (mirrors /api/courses/:id/enroll)
+app.post("/api/pdfs/:id/enroll", async (req, res) => {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    res.status(401).json({ message: "Please log in first to purchase the resource." });
+    return;
+  }
+
+  const pdf = db.pdfs.find(p => p.id === req.params.id);
+  if (!pdf) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+
+  const { paymentMethod, accountNumber } = req.body;
+  if (!paymentMethod || !accountNumber) {
+    res.status(400).json({ message: "Payment method and Account number are required." });
+    return;
+  }
+
+  const newOrder: Order = {
+    id: `ord_${Math.random().toString(36).substring(2, 9)}`,
+    userId: user.id,
+    userEmail: user.email,
+    courseId: pdf.id,
+    courseTitle: pdf.title,
+    productType: "pdf",
+    amount: pdf.price,
+    paymentMethod,
+    accountNumber,
+    status: "pending",
+    createdAt: new Date().toISOString()
+  };
+
+  db.orders.push(newOrder);
+  await saveDB(db);
+
+  res.json({
+    message: `Payment initiated successfully! Your EasyPaisa/JazzCash order #${newOrder.id} is pending approval from Tayyab's backend. To mock-approve immediately, you can review it in the Admin Panel or refresh!`,
+    order: newOrder
+  });
+});
+
+// WPAY automated enrollment for a PDF (mirrors /api/courses/:id/enroll-wpay)
+app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    res.status(401).json({ message: "Please log in first to purchase the resource." });
+    return;
+  }
+
+  const pdf = db.pdfs.find(p => p.id === req.params.id);
+  if (!pdf) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+
+  const { merchantId, username, password, paymentNumber } = req.body;
+
+  if (merchantId !== WPAY_MERCHANT_ID || username !== WPAY_USERNAME || password !== WPAY_PASSWORD) {
+    res.status(400).json({ message: "Invalid WPay Merchant Credentials. Verify details from configuration." });
+    return;
+  }
+
+  const orderId = `ord_wp_${Math.random().toString(36).substring(2, 8)}`;
+  const newOrder: Order = {
+    id: orderId,
+    userId: user.id,
+    userEmail: user.email,
+    courseId: pdf.id,
+    courseTitle: pdf.title,
+    productType: "pdf",
+    amount: pdf.price,
+    paymentMethod: "WPay",
+    accountNumber: paymentNumber || "WPay-Secure-Account",
+    status: "pending",
+    createdAt: new Date().toISOString()
+  };
+
+  db.orders.push(newOrder);
+  await saveDB(db);
+
+  const computedStr = `${merchantId}${orderId}${pdf.price}${WPAY_SIGNATURE_SALT}`;
+  const signature = crypto.createHash("md5").update(computedStr).digest("hex");
+
+  const verifyResult = await processApprovedWPayCallback(
+    merchantId,
+    orderId,
+    pdf.price,
+    signature,
+    "success",
+    "27.124.45.41"
+  );
+
+  if (verifyResult.success) {
+    res.json({
+      message: "WPay Secure Gateway: Payment Approved & Verified via Secure Callback (IP: 27.124.45.41)! This resource has been assigned and unlocked in your dashboard.",
+      order: verifyResult.order
+    });
+  } else {
+    res.status(400).json({
+      message: `WPay payment failed or callback rejected: ${verifyResult.message}`
+    });
+  }
+});
+
 // MANUAL PAYMENT & ORDER ENROLLMENTS
-app.post("/api/courses/:id/enroll", (req, res) => {
+app.post("/api/courses/:id/enroll", async (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) {
     res.status(401).json({ message: "Please log in first to purchase the course." });
@@ -536,7 +826,7 @@ app.post("/api/courses/:id/enroll", (req, res) => {
   };
 
   db.orders.push(newOrder);
-  saveDB(db);
+  await saveDB(db);
 
   res.json({
     message: `Payment initiated successfully! Your EasyPaisa/JazzCash order #${newOrder.id} is pending approval from Tayyab's backend. To mock-approve immediately, you can review it in the Admin Panel or refresh!`,
@@ -545,8 +835,8 @@ app.post("/api/courses/:id/enroll", (req, res) => {
 });
 
 // WPAY AUTOMATION CALLBACK BUSINESS LOGIC
-function processApprovedWPayCallback(merchantId: string, orderId: string, amount: number, signature: string, status: string, remoteIp: string): { success: boolean; message: string; order?: Order } {
-  if (merchantId !== "2794") {
+async function processApprovedWPayCallback(merchantId: string, orderId: string, amount: number, signature: string, status: string, remoteIp: string): Promise<{ success: boolean; message: string; order?: Order }> {
+  if (merchantId !== WPAY_MERCHANT_ID) {
     return { success: false, message: "Invalid WPay Merchant ID" };
   }
 
@@ -556,7 +846,7 @@ function processApprovedWPayCallback(merchantId: string, orderId: string, amount
   }
 
   // Signature validation
-  const computedStr = `${merchantId}${orderId}${amount}okok888`;
+  const computedStr = `${merchantId}${orderId}${amount}${WPAY_SIGNATURE_SALT}`;
   const computedSignature = crypto.createHash("md5").update(computedStr).digest("hex");
 
   if (signature !== computedSignature) {
@@ -567,23 +857,26 @@ function processApprovedWPayCallback(merchantId: string, orderId: string, amount
   (order as any).verifiedAt = new Date().toISOString();
   (order as any).processedByCallbackIp = remoteIp || "27.124.45.41";
 
-  const progressExist = db.progress.some(p => p.userId === order.userId && p.courseId === order.courseId);
-  if (!progressExist) {
-    db.progress.push({
-      userId: order.userId,
-      courseId: order.courseId,
-      completedLessons: [],
-      updatedAt: new Date().toISOString()
-    });
+  // Courses track lesson progress; PDF products simply unlock on approval.
+  if (order.productType !== "pdf") {
+    const progressExist = db.progress.some(p => p.userId === order.userId && p.courseId === order.courseId);
+    if (!progressExist) {
+      db.progress.push({
+        userId: order.userId,
+        courseId: order.courseId,
+        completedLessons: [],
+        updatedAt: new Date().toISOString()
+      });
+    }
   }
 
-  saveDB(db);
+  await saveDB(db);
 
-  return { success: true, message: "WPay Gateway verified transaction and assigned course successfully!", order };
+  return { success: true, message: "WPay Gateway verified transaction and assigned your purchase successfully!", order };
 }
 
 // WPAY EXTERNAL CALLBACK ENDPOINT
-app.post("/api/payments/wpay/callback", (req, res) => {
+app.post("/api/payments/wpay/callback", async (req, res) => {
   const reqIp = req.ip || req.socket.remoteAddress || "";
   const forwardedFor = req.headers["x-forwarded-for"];
   const clientIp = typeof forwardedFor === "string" ? forwardedFor.split(",")[0].trim() : reqIp;
@@ -597,7 +890,7 @@ app.post("/api/payments/wpay/callback", (req, res) => {
     return;
   }
 
-  const result = processApprovedWPayCallback(merchantId, orderId, Number(amount), signature, status, clientIp);
+  const result = await processApprovedWPayCallback(merchantId, orderId, Number(amount), signature, status, clientIp);
   if (result.success) {
     res.json({ success: true, status: "OK", message: result.message, orderId });
   } else {
@@ -606,7 +899,7 @@ app.post("/api/payments/wpay/callback", (req, res) => {
 });
 
 // WPAY AUTOMATED GATEWAY ENROLLMENT ACCESS TRIGGER (CLIENT SIDE HANDLER)
-app.post("/api/courses/:id/enroll-wpay", (req, res) => {
+app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) {
     res.status(401).json({ message: "Please log in first to purchase the course." });
@@ -621,7 +914,7 @@ app.post("/api/courses/:id/enroll-wpay", (req, res) => {
 
   const { merchantId, username, password, paymentNumber } = req.body;
 
-  if (merchantId !== "2794" || username !== "patlo222" || password !== "okok888") {
+  if (merchantId !== WPAY_MERCHANT_ID || username !== WPAY_USERNAME || password !== WPAY_PASSWORD) {
     res.status(400).json({ message: "Invalid WPay Merchant Credentials. Verify details from configuration." });
     return;
   }
@@ -641,12 +934,12 @@ app.post("/api/courses/:id/enroll-wpay", (req, res) => {
   };
 
   db.orders.push(newOrder);
-  saveDB(db);
+  await saveDB(db);
 
-  const computedStr = `${merchantId}${orderId}${course.price}okok888`;
+  const computedStr = `${merchantId}${orderId}${course.price}${WPAY_SIGNATURE_SALT}`;
   const signature = crypto.createHash("md5").update(computedStr).digest("hex");
 
-  const verifyResult = processApprovedWPayCallback(
+  const verifyResult = await processApprovedWPayCallback(
     merchantId,
     orderId,
     course.price,
@@ -675,8 +968,9 @@ app.get("/api/users/enrollments", (req, res) => {
     return;
   }
   const approvedOrders = db.orders.filter(o => o.userId === user.id && o.status === "approved");
-  const enrolledCourseIds = approvedOrders.map(o => o.courseId);
-  res.json({ enrolled: enrolledCourseIds });
+  const enrolledCourseIds = approvedOrders.filter(o => o.productType !== "pdf").map(o => o.courseId);
+  const purchasedPdfIds = approvedOrders.filter(o => o.productType === "pdf").map(o => o.courseId);
+  res.json({ enrolled: enrolledCourseIds, purchasedPdfs: purchasedPdfIds });
 });
 
 // SECURE VIDEO PLAYER SIGNING ENDPOINT
@@ -739,7 +1033,7 @@ app.get("/api/progress/:courseId", (req, res) => {
   });
 });
 
-app.post("/api/progress/:courseId/update", (req, res) => {
+app.post("/api/progress/:courseId/update", async (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) {
     res.status(401).json({ message: "Unauthorized" });
@@ -775,7 +1069,7 @@ app.post("/api/progress/:courseId/update", (req, res) => {
   }
 
   prog.updatedAt = new Date().toISOString();
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: "Progress updated", completedLessons: prog.completedLessons, lastWatchedLessonId: prog.lastWatchedLessonId });
 });
@@ -897,7 +1191,7 @@ app.get("/api/admin/users", (req, res) => {
   res.json({ users: db.users });
 });
 
-app.post("/api/admin/users/:userId/toggle-block", (req, res) => {
+app.post("/api/admin/users/:userId/toggle-block", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -916,14 +1210,14 @@ app.post("/api/admin/users/:userId/toggle-block", (req, res) => {
   }
 
   user.isBlocked = !user.isBlocked;
-  
+
   if (user.isBlocked) {
     db.sessions.forEach(s => {
       if (s.userId === user.id) s.isActive = false;
     });
   }
 
-  saveDB(db);
+  await saveDB(db);
   res.json({ message: `User ${user.name} is now ${user.isBlocked ? "blocked" : "active"}.`, user });
 });
 
@@ -936,7 +1230,7 @@ app.get("/api/admin/orders", (req, res) => {
   res.json({ orders: db.orders });
 });
 
-app.post("/api/admin/orders/:orderId/update", (req, res) => {
+app.post("/api/admin/orders/:orderId/update", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -951,8 +1245,8 @@ app.post("/api/admin/orders/:orderId/update", (req, res) => {
   }
 
   order.status = status;
-  
-  if (status === "approved") {
+
+  if (status === "approved" && order.productType !== "pdf") {
     const existingProg = db.progress.find(p => p.userId === order.userId && p.courseId === order.courseId);
     if (!existingProg) {
       db.progress.push({
@@ -965,11 +1259,11 @@ app.post("/api/admin/orders/:orderId/update", (req, res) => {
     }
   }
 
-  saveDB(db);
+  await saveDB(db);
   res.json({ message: `Order status updated to ${status}.`, order });
 });
 
-app.post("/api/admin/courses/create", (req, res) => {
+app.post("/api/admin/courses/create", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -1009,12 +1303,12 @@ app.post("/api/admin/courses/create", (req, res) => {
   };
 
   db.courses.push(newCourse);
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: "Course added successfully!", course: newCourse });
 });
 
-app.post("/api/admin/courses/update", (req, res) => {
+app.post("/api/admin/courses/update", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -1056,12 +1350,12 @@ app.post("/api/admin/courses/update", (req, res) => {
   };
 
   db.courses[courseIndex] = updatedCourse;
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: "Course updated successfully!", course: updatedCourse });
 });
 
-app.post("/api/admin/courses/:id/toggle-publish", (req, res) => {
+app.post("/api/admin/courses/:id/toggle-publish", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -1075,12 +1369,12 @@ app.post("/api/admin/courses/:id/toggle-publish", (req, res) => {
   }
 
   course.isPublished = course.isPublished !== false ? false : true;
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: `Course published status updated to ${course.isPublished}`, course });
 });
 
-app.post("/api/admin/courses/:id/delete", (req, res) => {
+app.post("/api/admin/courses/:id/delete", async (req, res) => {
   const userObj = getAuthenticatedUser(req);
   if (!userObj || userObj.role !== "admin") {
     res.status(403).json({ message: "Denied" });
@@ -1088,9 +1382,153 @@ app.post("/api/admin/courses/:id/delete", (req, res) => {
   }
 
   db.courses = db.courses.filter(c => c.id !== req.params.id);
-  saveDB(db);
+  await saveDB(db);
 
   res.json({ message: "Course deleted successfully!" });
+});
+
+// ADMIN PDF / DIGITAL RESOURCE MANAGEMENT (mirrors course admin routes)
+app.post("/api/admin/pdfs/create", async (req, res) => {
+  const userObj = getAuthenticatedUser(req);
+  if (!userObj || userObj.role !== "admin") {
+    res.status(403).json({ message: "Denied" });
+    return;
+  }
+
+  const { title, description, price, thumbnailUrl, pdfUrl, previewUrl, category } = req.body;
+
+  if (!title || !price || !pdfUrl) {
+    res.status(400).json({ message: "Title, Price and PDF file are required" });
+    return;
+  }
+
+  const newPdf: PdfProduct = {
+    id: `pdf-${Date.now()}`,
+    title,
+    description: description || "Premium digital resource",
+    price: Number(price),
+    thumbnailUrl: thumbnailUrl || "https://images.unsplash.com/photo-1554260570-9140fd3b7614?auto=format&fit=crop&w=800&q=80",
+    pdfUrl,
+    previewUrl: previewUrl || "",
+    category: category || "Trading",
+    isPublished: true,
+    createdAt: new Date().toISOString()
+  };
+
+  db.pdfs.push(newPdf);
+  await saveDB(db);
+
+  res.json({ message: "PDF resource published successfully!", pdf: newPdf });
+});
+
+app.post("/api/admin/pdfs/update", async (req, res) => {
+  const userObj = getAuthenticatedUser(req);
+  if (!userObj || userObj.role !== "admin") {
+    res.status(403).json({ message: "Denied" });
+    return;
+  }
+
+  const { id, title, description, price, thumbnailUrl, pdfUrl, previewUrl, category } = req.body;
+
+  if (!id) {
+    res.status(400).json({ message: "PDF ID is required for editing" });
+    return;
+  }
+
+  const pdfIndex = db.pdfs.findIndex(p => p.id === id);
+  if (pdfIndex === -1) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+
+  const current = db.pdfs[pdfIndex];
+  const updatedPdf: PdfProduct = {
+    ...current,
+    title: title || current.title,
+    description: description || current.description,
+    price: price !== undefined ? Number(price) : current.price,
+    thumbnailUrl: thumbnailUrl || current.thumbnailUrl,
+    pdfUrl: pdfUrl || current.pdfUrl,
+    previewUrl: previewUrl !== undefined ? previewUrl : current.previewUrl,
+    category: category || current.category
+  };
+
+  db.pdfs[pdfIndex] = updatedPdf;
+  await saveDB(db);
+
+  res.json({ message: "PDF resource updated successfully!", pdf: updatedPdf });
+});
+
+app.post("/api/admin/pdfs/:id/toggle-publish", async (req, res) => {
+  const userObj = getAuthenticatedUser(req);
+  if (!userObj || userObj.role !== "admin") {
+    res.status(403).json({ message: "Denied" });
+    return;
+  }
+
+  const pdf = db.pdfs.find(p => p.id === req.params.id);
+  if (!pdf) {
+    res.status(404).json({ message: "PDF not found" });
+    return;
+  }
+
+  pdf.isPublished = pdf.isPublished !== false ? false : true;
+  await saveDB(db);
+
+  res.json({ message: `PDF published status updated to ${pdf.isPublished}`, pdf });
+});
+
+app.post("/api/admin/pdfs/:id/delete", async (req, res) => {
+  const userObj = getAuthenticatedUser(req);
+  if (!userObj || userObj.role !== "admin") {
+    res.status(403).json({ message: "Denied" });
+    return;
+  }
+
+  db.pdfs = db.pdfs.filter(p => p.id !== req.params.id);
+  await saveDB(db);
+
+  res.json({ message: "PDF resource deleted successfully!" });
+});
+
+// ADMIN MEDIA UPLOAD (Cloudinary)
+// Receives a single file in memory and streams it to Cloudinary, returning the
+// hosted URL. Matches the { url } shape the AdminPanel upload helper expects.
+app.post("/api/admin/upload", upload.single("file"), async (req, res) => {
+  const userObj = getAuthenticatedUser(req);
+  if (!userObj || userObj.role !== "admin") {
+    res.status(403).json({ message: "Denied" });
+    return;
+  }
+
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    res.status(500).json({ message: "Cloudinary is not configured on the server." });
+    return;
+  }
+
+  const file = (req as any).file;
+  if (!file) {
+    res.status(400).json({ message: "No file uploaded." });
+    return;
+  }
+
+  try {
+    const result = await new Promise<any>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { resource_type: "auto", folder: "trade-with-tayyab" },
+        (error, uploadResult) => {
+          if (error) reject(error);
+          else resolve(uploadResult);
+        }
+      );
+      stream.end(file.buffer);
+    });
+
+    res.json({ url: result.secure_url });
+  } catch (err: any) {
+    console.error("Cloudinary upload error:", err);
+    res.status(500).json({ message: "File upload failed.", error: err?.message });
+  }
 });
 
 
@@ -1101,6 +1539,10 @@ app.post("/api/admin/courses/:id/delete", (req, res) => {
 // import that only runs in development, so the bundled production server
 // (dist/server.cjs) never resolves "vite" at startup.
 async function startServer() {
+  // Connect to MongoDB and load (or seed) the application state before serving.
+  await connectDB();
+  await loadDB();
+
   if (process.env.NODE_ENV === "development") {
     // Dev-only: attach Vite middleware for HMR / on-the-fly frontend serving.
     const viteModule = await import("vite");

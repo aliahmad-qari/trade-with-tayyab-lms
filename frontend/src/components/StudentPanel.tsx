@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Course, User } from "../types";
+import { Course, User, PdfProduct } from "../types";
 import VideoPlayer from "./VideoPlayer";
 import SecurePDFViewer from "./SecurePDFViewer";
 import { 
@@ -12,7 +12,9 @@ import {
 interface StudentPanelProps {
   currentUser: User | null;
   courses: Course[];
+  pdfs: PdfProduct[];
   enrolledCourseIds: string[];
+  purchasedPdfIds: string[];
   authToken: string | null;
   addToast: (message: string, type: "success" | "error" | "warning" | "info") => void;
   onLogout: () => void;
@@ -39,7 +41,9 @@ interface StudentPanelProps {
 export default function StudentPanel({
   currentUser,
   courses,
+  pdfs,
   enrolledCourseIds,
+  purchasedPdfIds,
   authToken,
   addToast,
   onLogout,
@@ -167,6 +171,34 @@ export default function StudentPanel({
 
   // Compute stats across all enrolled courses
   const enrolledCourses = courses.filter(c => enrolledCourseIds.includes(c.id));
+
+  // Purchased premium PDFs / digital resources
+  const purchasedPdfs = pdfs.filter(p => purchasedPdfIds.includes(p.id));
+
+  // Open a purchased PDF in the secure viewer (fetches the protected URL on demand)
+  const openSecurePdf = async (pdf: PdfProduct) => {
+    if (pdf.pdfUrl) {
+      setActivePdfUrl(pdf.pdfUrl);
+      setActivePdfTitle(pdf.title);
+      addToast("Decrypting your secure document in RAM...", "success");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/pdfs/${pdf.id}/secure-access`, {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.pdfUrl) {
+        setActivePdfUrl(data.pdfUrl);
+        setActivePdfTitle(data.title || pdf.title);
+        addToast("Decrypting your secure document in RAM...", "success");
+      } else {
+        addToast(data.message || "Unable to open this resource", "error");
+      }
+    } catch (e) {
+      addToast("Network error opening secure document", "error");
+    }
+  };
   
   // We can mock and compute active progress metrics
   const totalEnrolledCount = enrolledCourses.length;
@@ -196,6 +228,7 @@ export default function StudentPanel({
   const sidebarMenuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "courses", label: "My Courses", icon: BookOpen },
+    { id: "pdfs", label: "My PDFs / Resources", icon: FileText },
     { id: "player", label: "Continue Learning", icon: Play },
     { id: "progress", label: "Course Progress", icon: GraduationCap },
     { id: "downloads", label: "Downloads", icon: Download },
@@ -615,6 +648,55 @@ export default function StudentPanel({
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 2b. MY PDFS / DIGITAL RESOURCES PAGE */}
+          {studentSubTab === "pdfs" && (
+            <div className="space-y-6 animate-in fade-in duration-300 text-left">
+              <div className="border-b border-white/5 pb-4">
+                <h1 className="text-2xl font-extrabold text-white">My PDFs / Digital Resources</h1>
+                <p className="text-xs text-gray-400 mt-1">Open your purchased premium eBooks, checklists and cheat sheets in the secure watermarked reader.</p>
+              </div>
+
+              {purchasedPdfs.length === 0 ? (
+                <div className="p-16 rounded-xl bg-brand-card border border-white/5 text-center space-y-4 max-w-lg mx-auto">
+                  <FileText className="w-12 h-12 text-gray-500 mx-auto" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-white">No premium resources purchased yet</p>
+                    <p className="text-xs text-gray-400">Browse our Premium PDFs & Digital Resources and unlock them with PKR easy-transfers.</p>
+                  </div>
+                  {changeTab && (
+                    <button
+                      onClick={() => changeTab("courses")}
+                      className="px-4 py-2 bg-brand-purple text-white hover:bg-brand-violet text-xs font-bold rounded-lg"
+                    >
+                      Browse Resources
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {purchasedPdfs.map((pdf) => (
+                    <div key={pdf.id} className="p-4 bg-brand-card hover:bg-brand-card/90 border border-white/5 rounded-xl space-y-3.5 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        <img src={pdf.thumbnailUrl} alt={pdf.title} className="w-full h-28 object-cover rounded-lg bg-black/60 border border-white/5" />
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-mono font-bold text-emerald-500">📄 {pdf.category || "Resource"}</span>
+                          <h4 className="text-xs font-bold text-white line-clamp-2 leading-tight">{pdf.title}</h4>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openSecurePdf(pdf)}
+                        className="w-full text-center py-1.5 bg-[#f43f5e]/15 hover:bg-[#f43f5e] border border-red-500/35 text-white text-[10px] font-bold rounded transition cursor-pointer block"
+                      >
+                        Secure View Document (RAM Only)
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
