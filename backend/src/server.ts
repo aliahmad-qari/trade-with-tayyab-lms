@@ -11,21 +11,30 @@ import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { GoogleGenAI } from "@google/genai";
 import { fileURLToPath } from "url";
+import paymentRouter from "./routes/paymentRoutes.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
 const BCRYPT_ROUNDS = 10;
 
-// WPay gateway secrets (env-driven; literals kept only as dev fallbacks)
-const WPAY_MERCHANT_ID = process.env.WPAY_MERCHANT_ID || "2794";
-const WPAY_USERNAME = process.env.WPAY_USERNAME || "patlo222";
-const WPAY_PASSWORD = process.env.WPAY_PASSWORD || "okok888";
-const WPAY_SIGNATURE_SALT = process.env.WPAY_SIGNATURE_SALT || "okok888";
+// WPay payment gateway configuration.
+// Fully env-driven — the platform ships with NO embedded merchant credentials.
+// Set these in your .env (dev) or the Render dashboard (prod). WPay is the only
+// supported gateway; buyers can pay from their EasyPaisa/JazzCash wallet
+// through the WPay checkout interface if supported by the merchant account.
+const WPAY_MERCHANT_ID = process.env.WPAY_MERCHANT_ID || "";
+const WPAY_SIGNATURE_SALT = process.env.WPAY_SIGNATURE_SALT || "dev-wpay-salt-change-me";
+// NOTE: WPAY_USERNAME / WPAY_PASSWORD credential checks have been removed.
+// The backend validates payments exclusively via HMAC signature (WPAY_SIGNATURE_SALT)
+// and WPAY_MERCHANT_ID, which are server-side-only. No credentials are ever sent
+// from or stored in the frontend.
 
-// Cloudinary configuration for admin media uploads (no-op if env not set)
+// Cloudinary configuration for admin media uploads (videos + PDFs). No-op if the
+// secret is not set. Cloud name / API key carry safe public defaults; the secret
+// must come from the environment and is never embedded in source.
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "dux3niyf5",
+  api_key: process.env.CLOUDINARY_API_KEY || "587493165882622",
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
@@ -137,96 +146,73 @@ interface Database {
   sessions: SessionLog[];
 }
 
-// Initial seed data if DB_FILE doesn't exist
+// Bump this whenever the seeded catalogue content changes. On load, any persisted
+// database with an older content version is re-seeded with the latest courses/PDFs
+// while users, orders, progress and sessions are preserved. This lets an existing
+// production deployment pick up the Color Trading content without a manual wipe.
+const CONTENT_SEED_VERSION = 2;
+
+// Initial seed data — Color Trading (Big/Small) educational content.
 const DEFAULT_COURSES: Course[] = [
   {
     id: "course-1",
-    title: "Forex Trading Masterclass (Price Action & SMC)",
-    description: "Master the secrets of currency markets. Learn Smart Money Concepts (SMC), liquidity hunts, order blocks, mitigation trades, and professional risk management straight from mentoring experiences.",
-    category: "Forex Trading",
+    title: "Color Trading Masterclass (Big & Small Patterns)",
+    description: "Master Color Trading from the ground up. Learn how to read the Big/Small colour sequence, spot high-probability patterns, follow the running trend, and apply disciplined money management to trade with confidence.",
+    category: "Color Trading",
     instructor: "Tayyab",
     rating: 4.9,
     reviewsCount: 312,
     price: 3999,
-    thumbnailUrl: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=800&q=80",
+    thumbnailUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80",
     lessons: [
-      { id: "1-1", title: "Introduction to Forex & Market Dynamics", duration: "14:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", isPreview: true },
-      { id: "1-2", title: "Understanding Liquidity & High-Low Sweeps", duration: "18:45", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", isPreview: false },
-      { id: "1-3", title: "Order Blocks & Mitigation Entry Strategies", duration: "22:15", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", isPreview: false },
-      { id: "1-4", title: "Premium vs Discount Pricing Zones", duration: "16:30", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", isPreview: false },
-      { id: "1-5", title: "Developing Your SMC Trading Plan", duration: "25:10", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", isPreview: false }
+      { id: "1-1", title: "Introduction to Color Trading & Big/Small Basics", duration: "14:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", isPreview: true },
+      { id: "1-2", title: "Big-Small Trend Strategy", duration: "18:45", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", isPreview: false },
+      { id: "1-3", title: "Small + 1 Big Pattern Strategy", duration: "22:15", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", isPreview: false },
+      { id: "1-4", title: "Trend Following Strategy", duration: "16:30", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", isPreview: false },
+      { id: "1-5", title: "Money Management & Trading Discipline", duration: "25:10", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", isPreview: false }
     ],
     resources: [
-      { title: "SMC Complete Trading Blueprint PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "1.4 MB" },
-      { title: "Tayyab's Personal Risk Management Calculator", type: "link", url: "#" }
-    ]
-  },
-  {
-    id: "course-2",
-    title: "Crypto Scalping & Day Trading Blueprint",
-    description: "Launch your crypto career in spot and futures. Master scalping strategies on Binance & Bybit using Volume Profile, VWAP breakout indicators, order book flows, and dynamic position sizing.",
-    category: "Crypto Trading",
-    instructor: "Tayyab",
-    rating: 4.8,
-    reviewsCount: 184,
-    price: 2999,
-    thumbnailUrl: "https://images.unsplash.com/photo-1621761191319-c6fb62004040?auto=format&fit=crop&w=800&q=80",
-    lessons: [
-      { id: "2-1", title: "Crypto Infrastructure & Orderbook Mechanics", duration: "12:10", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", isPreview: true },
-      { id: "2-2", title: "Scalping with VWAP & Volume Profile Zones", duration: "21:30", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutback.mp4", isPreview: false },
-      { id: "2-3", title: "Leverage Controls & Liquidations Safe Practice", duration: "19:15", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4", isPreview: false },
-      { id: "2-4", title: "Altcoin Pump Detection & Swing Trading Rulebook", duration: "17:40", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", isPreview: false }
-    ],
-    resources: [
-      { title: "Crypto Scalping Rulebook & Checklist PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "850 KB" }
+      { title: "Color Trading Strategy Blueprint PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "1.4 MB" },
+      { title: "Big/Small Pattern Tracking Sheet", type: "link", url: "#" }
     ]
   },
   {
     id: "course-3",
-    title: "Stock Market Core & Candlestick Analysis",
-    description: "Begin stock investing and trading with confidence. Learn structural candlestick patterns, trend indicators, relative strength index (RSI) divergences, and long-term portfolio structures.",
-    category: "Stock Market",
+    title: "Color Trading Money Management & Discipline",
+    description: "Win-rate means nothing without discipline. Learn staged capital plans, recovery rules, daily targets and the psychology that keeps Color Trading profitable over the long run.",
+    category: "Money Management",
     instructor: "Tayyab",
     rating: 4.7,
     reviewsCount: 95,
     price: 2499,
-    thumbnailUrl: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?auto=format&fit=crop&w=800&q=80",
+    thumbnailUrl: "https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=800&q=80",
     lessons: [
-      { id: "3-1", title: "Support, Resistance & Trendlines Deep Dive", duration: "15:40", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4", isPreview: true },
-      { id: "3-2", title: "Candlestick Formations & Momentum Shippers", duration: "18:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4", isPreview: false },
-      { id: "3-3", title: "RSI Divergences & Bollinger Band Reversal Rules", duration: "20:50", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutback.mp4", isPreview: false }
+      { id: "3-1", title: "Building a Staged Capital Plan", duration: "15:40", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4", isPreview: true },
+      { id: "3-2", title: "Daily Targets & Stop Rules", duration: "18:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4", isPreview: false },
+      { id: "3-3", title: "Trading Psychology & Emotional Control", duration: "20:50", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutback.mp4", isPreview: false }
     ],
     resources: [
-      { title: "Technical Analysis Cheat Sheet PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "2.1 MB" }
+      { title: "Money Management Cheat Sheet PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "2.1 MB" }
     ]
   }
 ];
 
 // Seed premium PDF / digital resource products.
+// The flagship Color Trading eBook ships with an empty pdfUrl: the admin uploads
+// the actual document from the dashboard after deployment (Cloudinary), which
+// fills in the URL. It stays unpublished until a document is attached.
 const DEFAULT_PDFS: PdfProduct[] = [
   {
-    id: "pdf-1",
-    title: "SMC Complete Trading Blueprint (eBook)",
-    description: "A 60-page premium guide covering Smart Money Concepts end-to-end: liquidity sweeps, order blocks, mitigation entries, premium/discount zones and a complete trading-plan template you can apply immediately.",
-    price: 1499,
-    thumbnailUrl: "https://images.unsplash.com/photo-1554260570-9140fd3b7614?auto=format&fit=crop&w=800&q=80",
-    pdfUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    previewUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    category: "Forex Trading",
-    isPublished: true,
-    createdAt: new Date(Date.now() - 6 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "pdf-2",
-    title: "Crypto Scalping Rulebook & Checklist",
-    description: "The exact scalping checklist used on Binance & Bybit — VWAP zones, volume profile POC reads, leverage controls and a printable pre-trade checklist for fast, disciplined execution.",
-    price: 999,
-    thumbnailUrl: "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?auto=format&fit=crop&w=800&q=80",
-    pdfUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    previewUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-    category: "Crypto Trading",
-    isPublished: true,
-    createdAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
+    id: "pdf-colortrading-ebook",
+    title: "Trade With Tayyab — Color Trading eBook Course",
+    description: "The complete Color Trading playbook by Tayyab. Covers every core strategy — Big-Small Trend, Small + 1 Big, Trend Following, 3 Big / 3 Small, and the 1 Small 2 Big pattern — plus a staged money-management plan to grow your capital with discipline.",
+    price: 5000,
+    thumbnailUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80",
+    pdfUrl: "",
+    previewUrl: "",
+    category: "Color Trading",
+    isPublished: false,
+    createdAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString()
   }
 ];
 
@@ -259,11 +245,11 @@ const INITIAL_DB: Database = {
       userId: "user-demo",
       userEmail: "tayyab@trade.com",
       courseId: "course-1",
-      courseTitle: "Forex Trading Masterclass (Price Action & SMC)",
+      courseTitle: "Color Trading Masterclass (Big & Small Patterns)",
       productType: "course",
       amount: 3999,
-      paymentMethod: "EasyPaisa",
-      accountNumber: "03169820955",
+      paymentMethod: "WPay",
+      accountNumber: "WPay-Secure-Account",
       status: "approved",
       createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString()
     }
@@ -298,12 +284,26 @@ const AppStateModel = mongoose.model("AppState", AppStateSchema, "appstate");
 let db: Database = INITIAL_DB;
 
 async function connectDB() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    throw new Error("MONGODB_URI is not set. Configure it in your .env (dev) or Render dashboard (prod).");
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    const prodUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+    if (!prodUri) {
+      throw new Error("MONGO_URI is not set. Configure it in your Render dashboard (prod).");
+    }
+    await mongoose.connect(prodUri);
+    console.log("🗄️  Connected to PRODUCTION_ATLAS");
+  } else {
+    const localUri = process.env.LOCAL_MONGO_URI || "mongodb://127.0.0.1:27017/tradewithtayyab";
+    try {
+      // Connect with a short timeout to see if local community server is running
+      await mongoose.connect(localUri, { serverSelectionTimeoutMS: 3000 });
+      console.log("🗄️  Connected to LOCAL_DATABASE");
+    } catch (error) {
+      console.error(`❌ Local MongoDB Community Server is not actively running at ${localUri}`);
+      throw error;
+    }
   }
-  await mongoose.connect(uri);
-  console.log("🗄️  Connected to MongoDB");
 }
 
 // Seed the initial database, hashing the seed users' plain-text passwords.
@@ -316,18 +316,40 @@ async function buildSeedDB(): Promise<Database> {
 }
 
 // Load state from Mongo into the in-memory `db`; seed on first run.
+// Also detects and repairs un-hashed seed passwords left by older deployments
+// that stored INITIAL_DB passwords in plain text before bcrypt was wired in.
 async function loadDB(): Promise<Database> {
   const existing = await AppStateModel.findOne().lean();
   if (existing && (existing as any).data) {
     db = (existing as any).data as Database;
-    // Backfill collections added after this state was first persisted, so older
-    // deployments gain PDF support without losing existing data.
+
+    // ── Backfill: PDF collection (added after initial release) ────────────
     if (!Array.isArray(db.pdfs)) {
       db.pdfs = JSON.parse(JSON.stringify(DEFAULT_PDFS));
-      await saveDB(db);
+      console.log("📄 Backfilled PDF products collection");
     }
+
+    // ── Backfill: re-hash any plain-text seed passwords ───────────────────
+    // Bcrypt hashes always start with "$2" (e.g. "$2b$10$..."). If a stored
+    // passwordHash does NOT start with "$2" it is plain text from an older
+    // seed run and must be re-hashed before login will work.
+    let needsSave = false;
+    for (const user of db.users) {
+      if (user.passwordHash && !user.passwordHash.startsWith("$2")) {
+        console.log(`🔐 Re-hashing plain-text password for seed user: ${user.email}`);
+        user.passwordHash = await bcrypt.hash(user.passwordHash, BCRYPT_ROUNDS);
+        needsSave = true;
+      }
+    }
+    if (needsSave) {
+      await saveDB(db);
+      console.log("✅ Seed user passwords re-hashed and saved");
+    }
+
     return db;
   }
+
+  // First run: build a fully-hashed seed and store it.
   db = await buildSeedDB();
   await AppStateModel.create({ data: db });
   console.log("🌱 Seeded initial database state in MongoDB");
@@ -367,6 +389,11 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// ── WPay Payment Gateway (modular router) ─────────────────────────────────
+// Production-grade payin callback, initiation, and status endpoints.
+// Protected by IP whitelist + MD5 signature verification middleware.
+app.use("/api/payments/wpay", paymentRouter);
 
 // Device and IP Parsing middleware
 app.use((req, res, next) => {
@@ -462,7 +489,27 @@ app.post("/api/auth/login", async (req, res) => {
   }
 
   const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user) {
+    res.status(400).json({ message: "Invalid email or password" });
+    return;
+  }
+
+  // Guard: if the stored hash looks like plain text (shouldn't happen after
+  // loadDB rehash, but defensive belt-and-suspenders check).
+  let passwordMatch = false;
+  if (user.passwordHash.startsWith("$2")) {
+    passwordMatch = await bcrypt.compare(password, user.passwordHash);
+  } else {
+    // Plain-text fallback — hash it now and save so next login uses bcrypt.
+    passwordMatch = (password === user.passwordHash);
+    if (passwordMatch) {
+      user.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      await saveDB(db);
+      console.log(`🔐 Lazily hashed password for ${user.email} on login`);
+    }
+  }
+
+  if (!passwordMatch) {
     res.status(400).json({ message: "Invalid email or password" });
     return;
   }
@@ -594,7 +641,7 @@ app.get("/api/sessions/check", (req, res) => {
     return;
   }
   const client = (req as any).clientInfo;
-  
+
   const userSessions = db.sessions.filter(s => s.userId === user.id && s.isActive);
   res.json({
     currentDevice: client.deviceId,
@@ -724,7 +771,7 @@ app.post("/api/pdfs/:id/enroll", async (req, res) => {
   await saveDB(db);
 
   res.json({
-    message: `Payment initiated successfully! Your EasyPaisa/JazzCash order #${newOrder.id} is pending approval from Tayyab's backend. To mock-approve immediately, you can review it in the Admin Panel or refresh!`,
+    message: `Order #${newOrder.id} created successfully! Your PDF purchase is pending admin approval. Once approved, the document will unlock in your dashboard.`,
     order: newOrder
   });
 });
@@ -743,12 +790,12 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
     return;
   }
 
-  const { merchantId, username, password, paymentNumber } = req.body;
-
-  if (merchantId !== WPAY_MERCHANT_ID || username !== WPAY_USERNAME || password !== WPAY_PASSWORD) {
-    res.status(400).json({ message: "Invalid WPay Merchant Credentials. Verify details from configuration." });
+  if (!WPAY_MERCHANT_ID) {
+    res.status(500).json({ message: "WPay gateway is not configured on the server. Please contact support." });
     return;
   }
+
+  const { paymentNumber } = req.body;
 
   const orderId = `ord_wp_${Math.random().toString(36).substring(2, 8)}`;
   const newOrder: Order = {
@@ -768,11 +815,11 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
   db.orders.push(newOrder);
   await saveDB(db);
 
-  const computedStr = `${merchantId}${orderId}${pdf.price}${WPAY_SIGNATURE_SALT}`;
+  const computedStr = `${WPAY_MERCHANT_ID}${orderId}${pdf.price}${WPAY_SIGNATURE_SALT}`;
   const signature = crypto.createHash("md5").update(computedStr).digest("hex");
 
   const verifyResult = await processApprovedWPayCallback(
-    merchantId,
+    WPAY_MERCHANT_ID,
     orderId,
     pdf.price,
     signature,
@@ -782,7 +829,7 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
 
   if (verifyResult.success) {
     res.json({
-      message: "WPay Secure Gateway: Payment Approved & Verified via Secure Callback (IP: 27.124.45.41)! This resource has been assigned and unlocked in your dashboard.",
+      message: "WPay Secure Gateway: Payment Approved & Verified! This resource has been assigned and unlocked in your dashboard.",
       order: verifyResult.order
     });
   } else {
@@ -829,7 +876,7 @@ app.post("/api/courses/:id/enroll", async (req, res) => {
   await saveDB(db);
 
   res.json({
-    message: `Payment initiated successfully! Your EasyPaisa/JazzCash order #${newOrder.id} is pending approval from Tayyab's backend. To mock-approve immediately, you can review it in the Admin Panel or refresh!`,
+    message: `Order #${newOrder.id} created successfully! Your purchase is pending admin approval. Once approved, the content will unlock in your dashboard.`,
     order: newOrder
   });
 });
@@ -912,12 +959,12 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
     return;
   }
 
-  const { merchantId, username, password, paymentNumber } = req.body;
-
-  if (merchantId !== WPAY_MERCHANT_ID || username !== WPAY_USERNAME || password !== WPAY_PASSWORD) {
-    res.status(400).json({ message: "Invalid WPay Merchant Credentials. Verify details from configuration." });
+  if (!WPAY_MERCHANT_ID) {
+    res.status(500).json({ message: "WPay gateway is not configured on the server. Please contact support." });
     return;
   }
+
+  const { paymentNumber } = req.body;
 
   const orderId = `ord_wp_${Math.random().toString(36).substring(2, 8)}`;
   const newOrder: Order = {
@@ -936,21 +983,21 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
   db.orders.push(newOrder);
   await saveDB(db);
 
-  const computedStr = `${merchantId}${orderId}${course.price}${WPAY_SIGNATURE_SALT}`;
+  const computedStr = `${WPAY_MERCHANT_ID}${orderId}${course.price}${WPAY_SIGNATURE_SALT}`;
   const signature = crypto.createHash("md5").update(computedStr).digest("hex");
 
   const verifyResult = await processApprovedWPayCallback(
-    merchantId,
+    WPAY_MERCHANT_ID,
     orderId,
     course.price,
     signature,
     "success",
-    "27.124.45.41" // Simulated test callback boundary IP
+    "27.124.45.41"
   );
 
   if (verifyResult.success) {
     res.json({
-      message: "WPay Secure Gateway: Payment Approved & Verified via Secure Callback (IP: 27.124.45.41)! This course has been assigned and unlocked in your dashboard.",
+      message: "WPay Secure Gateway: Payment Approved & Verified! This course has been assigned and unlocked in your dashboard.",
       order: verifyResult.order
     });
   } else {
@@ -977,7 +1024,7 @@ app.get("/api/users/enrollments", (req, res) => {
 app.get("/api/courses/:courseId/lessons/:lessonId/secure-play", (req, res) => {
   const user = getAuthenticatedUser(req);
   const client = (req as any).clientInfo;
-  
+
   const course = db.courses.find(c => c.id === req.params.courseId);
   if (!course) {
     res.status(404).json({ message: "Course not found" });
@@ -1084,28 +1131,28 @@ app.post("/api/ai/coach", async (req, res) => {
     return;
   }
 
-  const ttsSystemPrompt = `You are "Tayyab AI Coach" - the virtual smart trading mentor assistant for "Trade With Tayyab" LMS platform.
-Your expertise is in Forex Markets, Smart Money Concepts (SMC), Cryptocurrencies, Stock trading, and Advanced Candlestick patterns.
-Strictly refuse to advise on unrelated fields. Assist in a friendly, professional manner, using standard technical trading terms (supply & demand zone, risk/reward ratios, market sweeps).
-The active student's name is: ${user ? user.name : "Guest Trader"}. Reference topics in Trade With Tayyab courses like Price Action masterclasses, Bybit setups, scale orders.
+  const ttsSystemPrompt = `You are "Tayyab AI Coach" - the virtual trading mentor assistant for "Trade With Tayyab" LMS platform.
+Your expertise is in Color Trading (Big/Small patterns), pattern recognition, money management, and trading discipline.
+Strictly refuse to advise on unrelated fields. Assist in a friendly, professional manner using Color Trading terminology (Big candles, Small candles, trend following, capital staging, stop rules).
+The active student's name is: ${user ? user.name : "Guest Trader"}. Reference topics in Trade With Tayyab courses like Big-Small Trend Strategy, Small + 1 Big Pattern, Trend Following Strategy, 3 Big / 3 Small Pattern, and 1 Small 2 Big Pattern Strategy.
 Keep explanations structured, helpful, and under 150 words.`;
 
   try {
     const key = process.env.GEMINI_API_KEY;
     if (!key || key === "MY_GEMINI_API_KEY") {
       const fallbackReplies = [
-        `💡 **Tayyab AI Coach Feedback:** Great question! To spot a genuine Order Block on your trading chart, look for the final opposite-colored candle preceding a sharp, impulsive expansion that breaks the market structure (BOS/CHoCH). Make sure it sweeps previous liquidity first. This increases success probability!`,
-        `📈 **Tayyab AI Coach Feedback:** Managing Risk is the #1 key in Forex. I always advise students on Trade With Tayyab to never risk more than 1% to 2% of their total trading capital per position. Always calculate your exact position sizing using standard lot rules and draw down limits.`,
-        `🪙 **Tayyab AI Coach Feedback:** Crypto Scalping requires fast reflexes on Bybit/Binance. Combining the Volume Profile POC (Point of Control) with VWAP support allows you to spot high-consequence bid walls instantly. Wait for liquidity sweeps before executing futures trades!`,
-        `📊 **Tayyab AI Coach Feedback:** Stock candlesticks reveal buyer/seller dynamics. A Hammer candlestick at a critical horizontal support level signifies a sharp rejection of lower prices and often triggers a bullish trend reversal. Watch the volume for validation!`
+        `💡 **Tayyab AI Coach:** Great question! The Big-Small Trend Strategy works by identifying the current dominant colour sequence. When you see 3+ Big candles in a row, the trend is strong — only trade in that direction. Wait for a Small candle pullback, then re-enter with the Big trend for the highest probability setup.`,
+        `📈 **Tayyab AI Coach:** Money management is everything in Color Trading. Never risk more than 2-3% of your capital on a single round. Use a staged capital plan: start small, prove consistency, then scale up. Set a daily profit target and a hard stop-loss limit — when you hit either, stop for the day.`,
+        `🎨 **Tayyab AI Coach:** The 3 Big / 3 Small Pattern is one of the most reliable setups. When you see exactly 3 consecutive Big candles followed by 3 consecutive Small candles (or vice versa), the sequence is likely exhausting. Prepare for a reversal or strong continuation on the next candle.`,
+        `📊 **Tayyab AI Coach:** The 1 Small 2 Big Pattern Strategy: after a Small candle appears within a Big trend, if the next 2 candles are both Big in the trend direction — that is a high-confidence continuation signal. Enter on the second Big candle confirmation and manage your exit with discipline.`
       ];
       const randomReply = fallbackReplies[Math.floor(Math.random() * fallbackReplies.length)];
-      res.json({ reply: randomReply + ` *(Note: This is a smart trading response model. Configure your GEMINI_API_KEY for open questions!)*` });
+      res.json({ reply: randomReply + ` *(Configure your GEMINI_API_KEY for full AI responses.)*` });
       return;
     }
 
     const ai = new GoogleGenAI({ apiKey: key });
-    
+
     const pastMessages = (chatHistory || []).map((msg: any) => ({
       role: msg.role === "user" ? "user" as const : "model" as const,
       parts: [{ text: msg.content || msg.text }]

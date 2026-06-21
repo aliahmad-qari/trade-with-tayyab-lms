@@ -5,7 +5,7 @@ services:
     plan: free
     # Deploy only the backend/ folder. Render runs install/build/start here.
     rootDir: backend
-    buildCommand: npm install --include=dev && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -31,12 +31,8 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
-      # WPay payment gateway credentials.
+      # WPay payment gateway — server-side only, never sent to frontend.
       - key: WPAY_MERCHANT_ID
-        sync: false
-      - key: WPAY_USERNAME
-        sync: false
-      - key: WPAY_PASSWORD
         sync: false
       - key: WPAY_SIGNATURE_SALT
         sync: false

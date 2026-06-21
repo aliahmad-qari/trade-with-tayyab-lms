@@ -72,7 +72,7 @@ export default function AdminPanel({
 
   // Course Creator Form State
   const [newTitle, setNewTitle] = useState("");
-  const [newCategory, setNewCategory] = useState("Forex Trading");
+  const [newCategory, setNewCategory] = useState("Color Trading");
   const [newPrice, setNewPrice] = useState("");
   const [newThumb, setNewThumb] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -86,9 +86,9 @@ export default function AdminPanel({
     pdfTitle?: string;
     order?: number;
   }[]>([
-    { title: "Market Flow Fundamentals (Introduction)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Get familiar with our standard SMC concepts", order: 1 },
-    { title: "Liquidation Sweeping & Grab Scenarios", duration: "25:30", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", description: "Learn how market makers capture retailer retail liquidity stop losses", order: 2 },
-    { title: "SMC Entry Order Strategy Mitigation Matrix", duration: "18:15", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", description: "Learn mitigation trades to secure clean R:R set ups", order: 3 },
+    { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Big/Small Color Trading concepts", order: 1 },
+    { title: "Big-Small Trend Strategy", duration: "25:30", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", description: "Learn how to identify and trade the dominant Big/Small trend", order: 2 },
+    { title: "Money Management & Capital Staging", duration: "18:15", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", description: "Build a staged capital plan and daily stop rules", order: 3 },
   ]);
   const [newLessonTitle, setNewLessonTitle] = useState("");
   const [newLessonUrl, setNewLessonUrl] = useState("");
@@ -143,7 +143,7 @@ export default function AdminPanel({
 
   // PDF Resource Creator/Editor Form State
   const [pdfTitle, setPdfTitle] = useState("");
-  const [pdfCategory, setPdfCategory] = useState("Forex Trading");
+  const [pdfCategory, setPdfCategory] = useState("Color Trading");
   const [pdfPrice, setPdfPrice] = useState("");
   const [pdfThumb, setPdfThumb] = useState("");
   const [pdfDesc, setPdfDesc] = useState("");
@@ -157,7 +157,7 @@ export default function AdminPanel({
 
   const resetPdfForm = () => {
     setPdfTitle("");
-    setPdfCategory("Forex Trading");
+    setPdfCategory("Color Trading");
     setPdfPrice("");
     setPdfThumb("");
     setPdfDesc("");
@@ -243,9 +243,7 @@ export default function AdminPanel({
     }
   };
 
-  // Payment Setup Settings State
-  const [paymentEasyPaisaNo, setPaymentEasyPaisaNo] = useState("03169820955");
-  const [paymentJazzCashNo, setPaymentJazzCashNo] = useState("03169820955");
+  // Platform Settings State
   const [contactPhone, setContactPhone] = useState("03169820955");
   const [contactEmail, setContactEmail] = useState("Tusharsilawat41k@gmail.com");
   const [sessionLimit, setSessionLimit] = useState("1");
@@ -346,7 +344,7 @@ export default function AdminPanel({
         setNewThumb("");
         setNewPrice("");
         setNewLessons([
-          { title: "Market Flow Fundamentals", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Standard introduction to forex indicators", order: 1 }
+          { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
         ]);
         setCourseResources([]);
         setEditingCourseId(null);
@@ -499,7 +497,7 @@ export default function AdminPanel({
                     setNewThumb("");
                     setNewPrice("");
                     setNewLessons([
-                      { title: "Market Flow Fundamentals", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Standard introduction to forex indicators", order: 1 }
+                      { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
                     ]);
                     setCourseResources([]);
                   }
@@ -713,10 +711,10 @@ export default function AdminPanel({
                     onChange={(e) => setCourseCatFilter(e.target.value)}
                     className="bg-black/45 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white"
                   >
-                    <option value="All">All Disciplines</option>
-                    <option value="Forex Trading">Forex</option>
-                    <option value="Crypto Trading">Crypto</option>
-                    <option value="Stock Market">Stock</option>
+                    <option value="All">All Categories</option>
+                    <option value="Color Trading">Color Trading</option>
+                    <option value="Money Management">Money Management</option>
+                    <option value="Trading Psychology">Psychology</option>
                   </select>
                 </div>
               </div>
@@ -846,7 +844,7 @@ export default function AdminPanel({
                       setNewThumb("");
                       setNewPrice("");
                       setNewLessons([
-                        { title: "Market Flow Fundamentals", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Standard introduction to forex indicators", order: 1 }
+                        { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
                       ]);
                       setCourseResources([]);
                       addToast("Editing reset. Form ready for new course creation", "info");
@@ -895,10 +893,10 @@ export default function AdminPanel({
                       onChange={(e) => setNewCategory(e.target.value)}
                       className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
                     >
-                      <option value="Forex Trading">Forex Trading masterclass</option>
-                      <option value="Crypto Trading">Crypto Trading masterclass</option>
-                      <option value="Stock Market">Stock Market Strategy</option>
-                      <option value="Technical Analysis">Technical Indicators</option>
+                      <option value="Color Trading">Color Trading</option>
+                      <option value="Money Management">Money Management</option>
+                      <option value="Trading Psychology">Trading Psychology</option>
+                      <option value="Pattern Strategies">Pattern Strategies</option>
                     </select>
                   </div>
                 </div>
@@ -1405,7 +1403,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setPdfTitle(p.title);
                               setPdfPrice(p.price.toString());
-                              setPdfCategory(p.category || "Forex Trading");
+                              setPdfCategory(p.category || "Color Trading");
                               setPdfDesc(p.description);
                               setPdfThumb(p.thumbnailUrl);
                               setPdfFileUrl(p.pdfUrl || "");
@@ -1497,10 +1495,10 @@ export default function AdminPanel({
                       onChange={(e) => setPdfCategory(e.target.value)}
                       className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
                     >
-                      <option value="Forex Trading">Forex Trading</option>
-                      <option value="Crypto Trading">Crypto Trading</option>
-                      <option value="Stock Market">Stock Market</option>
-                      <option value="Technical Analysis">Technical Analysis</option>
+                      <option value="Color Trading">Color Trading</option>
+                      <option value="Money Management">Money Management</option>
+                      <option value="Trading Psychology">Trading Psychology</option>
+                      <option value="Pattern Strategies">Pattern Strategies</option>
                       <option value="Risk Management">Risk Management</option>
                     </select>
                   </div>
@@ -1816,32 +1814,34 @@ export default function AdminPanel({
           {adminSubTab === "payments" && (
             <div className="space-y-6 animate-in fade-in duration-300 text-left">
               <div className="border-b border-white/5 pb-4">
-                <h1 className="text-2xl font-extrabold text-white">Manual Payment Inboxes</h1>
-                <p className="text-xs text-gray-400 mt-1 font-sans">Verify EasyPaisa and JazzCash receipt caches separated by channels.</p>
+                <h1 className="text-2xl font-extrabold text-white">Payment Queues</h1>
+                <p className="text-xs text-gray-400 mt-1 font-sans">All payments are processed via WPay gateway. Review and approve pending orders below.</p>
               </div>
 
-              {/* Group summaries */}
+              {/* WPay + Pending split view */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                {/* EasyPaisa Inbox */}
+                {/* WPay Payments */}
                 <div className="p-4 bg-brand-card rounded-xl border border-white/5 space-y-4 text-left">
                   <div className="flex justify-between items-center border-b border-white/5 pb-2">
                     <h3 className="text-xs font-extrabold text-[#ffffff] uppercase font-mono tracking-wider flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                      <span>EasyPaisa Deposit Inbox</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-brand-purple"></span>
+                      <span>WPay Gateway Orders</span>
                     </h3>
-                    <span className="text-[10px] text-emerald-400 font-bold font-mono">{paymentEasyPaisaNo}</span>
+                    <span className="text-[10px] text-brand-violet font-bold font-mono">
+                      {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").length} orders
+                    </span>
                   </div>
 
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "easypaisa").length === 0 ? (
-                      <p className="text-xs text-gray-500 italic p-4 text-center">No EasyPaisa cash logs checked in yet.</p>
+                    {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").length === 0 ? (
+                      <p className="text-xs text-gray-500 italic p-4 text-center">No WPay orders yet.</p>
                     ) : (
-                      adminOrders.filter(o => o.paymentMethod.toLowerCase() === "easypaisa").map((ord, idx) => (
+                      adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").map((ord, idx) => (
                         <div key={idx} className="p-3 bg-black/40 border border-white/5 rounded-lg text-xs flex justify-between items-center">
                           <div>
                             <p className="font-bold text-white truncate max-w-[150px]">{ord.userEmail}</p>
-                            <p className="text-[10px] text-gray-500 font-mono font-bold mt-1">Receipt ID: {ord.accountNumber}</p>
+                            <p className="text-[10px] text-gray-500 font-mono font-bold mt-1">Wallet: {ord.accountNumber}</p>
                           </div>
                           <div className="text-right">
                             <span className="text-white font-bold block">{ord.amount.toLocaleString()} PKR</span>
@@ -1853,29 +1853,44 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                {/* JazzCash Inbox */}
+                {/* Pending Approval Inbox */}
                 <div className="p-4 bg-brand-card rounded-xl border border-white/5 space-y-4 text-left font-sans">
                   <div className="flex justify-between items-center border-b border-white/5 pb-2">
                     <h3 className="text-xs font-extrabold text-[#ffffff] uppercase font-mono tracking-wider flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                      <span>JazzCash Deposit Inbox</span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                      <span>Pending Approval Queue</span>
                     </h3>
-                    <span className="text-[10px] text-red-400 font-bold font-mono">{paymentJazzCashNo}</span>
+                    <span className="text-[10px] text-amber-400 font-bold font-mono">
+                      {adminOrders.filter(o => o.status === "pending").length} pending
+                    </span>
                   </div>
 
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "jazzcash").length === 0 ? (
-                      <p className="text-xs text-gray-500 italic p-4 text-center">No JazzCash cash logs checked in yet.</p>
+                    {adminOrders.filter(o => o.status === "pending").length === 0 ? (
+                      <p className="text-xs text-gray-500 italic p-4 text-center">No pending orders in queue.</p>
                     ) : (
-                      adminOrders.filter(o => o.paymentMethod.toLowerCase() === "jazzcash").map((ord, idx) => (
-                        <div key={idx} className="p-3 bg-black/40 border border-white/5 rounded-lg text-xs flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-white truncate max-w-[150px]">{ord.userEmail}</p>
-                            <p className="text-[10px] text-gray-500 font-mono font-bold mt-1">Receipt ID: {ord.accountNumber}</p>
+                      adminOrders.filter(o => o.status === "pending").map((ord, idx) => (
+                        <div key={idx} className="p-3 bg-black/40 border border-white/5 rounded-lg text-xs flex justify-between items-center gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-white truncate max-w-[140px]">{ord.userEmail}</p>
+                            <p className="text-[10px] text-gray-500 font-mono mt-0.5 truncate">{ord.courseTitle}</p>
                           </div>
-                          <div className="text-right">
-                            <span className="text-white font-bold block">{ord.amount.toLocaleString()} PKR</span>
-                            <span className={`text-[8px] uppercase font-mono tracking-wide ${ord.status === "approved" ? "text-emerald-400" : "text-amber-400"}`}>{ord.status}</span>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-white font-bold font-mono text-[11px]">{ord.amount.toLocaleString()} PKR</span>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleOrderApproveAdmin(ord.id, "approved")}
+                                className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[9px] font-bold hover:bg-emerald-500/30 transition"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleOrderApproveAdmin(ord.id, "rejected")}
+                                className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded text-[9px] font-bold hover:bg-rose-500/30 transition"
+                              >
+                                Reject
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))
@@ -2039,23 +2054,25 @@ export default function AdminPanel({
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">EasyPaisa Account Number</label>
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">WPay Merchant ID</label>
                     <input
                       type="text"
-                      value={paymentEasyPaisaNo}
-                      onChange={(e) => setPaymentEasyPaisaNo(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+                      placeholder="Set via WPAY_MERCHANT_ID on Render"
+                      disabled
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono cursor-not-allowed"
                     />
+                    <p className="text-[9px] text-gray-600 font-mono">Configure in Render environment variables</p>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">JazzCash Account Number</label>
+                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">WPay Signature Salt</label>
                     <input
-                      type="text"
-                      value={paymentJazzCashNo}
-                      onChange={(e) => setPaymentJazzCashNo(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono"
+                      type="password"
+                      placeholder="Set via WPAY_SIGNATURE_SALT on Render"
+                      disabled
+                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-500 font-mono cursor-not-allowed"
                     />
+                    <p className="text-[9px] text-gray-600 font-mono">Configure in Render environment variables</p>
                   </div>
                 </div>
 
@@ -2107,7 +2124,7 @@ export default function AdminPanel({
         {/* Footer info tag */}
         <div className="pt-8 border-t border-white/5 text-[10px] text-gray-600 flex justify-between font-mono">
           <span>Lahore Command Terminal</span>
-          <span>© 2026 SMC Security Command</span>
+          <span>© 2026 Trade With Tayyab</span>
         </div>
       </main>
 

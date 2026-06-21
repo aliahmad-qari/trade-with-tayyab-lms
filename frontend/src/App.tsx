@@ -67,11 +67,7 @@ export default function App() {
   // Payment Form Trigger — unified for courses and premium PDFs so the exact
   // same modal + workflow serves both product kinds.
   const [paymentModalProduct, setPaymentModalProduct] = useState<{ kind: "course" | "pdf"; id: string; title: string; price: number } | null>(null);
-  const [payMethod, setPayMethod] = useState<string>("EasyPaisa");
   const [payNumber, setPayNumber] = useState("");
-  const [wpayMerchantId, setWpayMerchantId] = useState("2794");
-  const [wpayUsername, setWpayUsername] = useState("patlo222");
-  const [wpayPassword, setWpayPassword] = useState("okok888");
 
   // Account Settings Form
   const [settingsName, setSettingsName] = useState("");
@@ -377,29 +373,18 @@ export default function App() {
     e.preventDefault();
     if (!paymentModalProduct) return;
     if (!payNumber) {
-      addToast("Please input your mobile account number.", "error");
+      addToast("Please enter your WPay wallet account number.", "error");
       return;
     }
 
     try {
-      const isWpay = payMethod === "WPay";
       const base = paymentModalProduct.kind === "pdf" ? "pdfs" : "courses";
-      const targetEndpoint = isWpay
-        ? `/api/${base}/${paymentModalProduct.id}/enroll-wpay`
-        : `/api/${base}/${paymentModalProduct.id}/enroll`;
+      const targetEndpoint = `/api/${base}/${paymentModalProduct.id}/enroll-wpay`;
 
-      const requestBody = isWpay
-        ? {
-            merchantId: wpayMerchantId,
-            username: wpayUsername,
-            password: wpayPassword,
-            paymentNumber: payNumber,
-            paymentMethod: "WPay"
-          }
-        : {
-            paymentMethod: payMethod,
-            accountNumber: payNumber
-          };
+      const requestBody = {
+        paymentNumber: payNumber,
+        paymentMethod: "WPay"
+      };
 
       const res = await fetch(targetEndpoint, {
         method: "POST",
@@ -652,7 +637,7 @@ export default function App() {
                     </h1>
 
                     <p className="text-sm text-gray-300 max-w-xl leading-relaxed">
-                      Access world-class courses designed by industry experts and take the next step in your career. Build financial independence with complete Smart Money Concepts (SMC), market liquidity strategies, order-block mitigations, and crypto scalp setups!
+                      Access world-class Color Trading courses designed by Tayyab. Master Big-Small pattern strategies, trend following techniques, disciplined money management, and build consistent profits with Color Trading.
                     </p>
 
                     <div className="flex flex-wrap gap-4 pt-2">
@@ -730,11 +715,11 @@ export default function App() {
                         {/* Overlay glass tag floating elements */}
                         <div className="absolute bottom-6 left-6 right-6 p-3 rounded-xl glass-panel border border-white/10 flex items-center gap-3">
                           <div className="w-10 h-10 bg-brand-purple/20 rounded-lg flex items-center justify-center text-brand-violet font-bold font-sans">
-                            SMC
+                            CT
                           </div>
                           <div className="text-left">
-                            <p className="text-xs font-extrabold text-white">Tayyab Trading Masterclass</p>
-                            <p className="text-[10px] text-gray-400">Authorized Pakistan Forex Guide</p>
+                            <p className="text-xs font-extrabold text-white">Tayyab Color Trading Masterclass</p>
+                            <p className="text-[10px] text-gray-400">Pakistan Color Trading Expert</p>
                           </div>
                         </div>
                       </div>
@@ -763,7 +748,7 @@ export default function App() {
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <h3 className="font-bold text-white text-base">Premium Content</h3>
-                      <p className="text-xs text-gray-400 leading-relaxed">Get 1080p recorded lessons detailing Sweeps, S/D demand block structures, and trading plans with cheat sheet PDFs.</p>
+                      <p className="text-xs text-gray-400 leading-relaxed">Get premium Color Trading lessons from Tayyab covering Big-Small patterns, trend analysis, and disciplined capital management with strategy PDFs.</p>
                     </div>
 
                     <div className="p-6 rounded-xl glass-panel glass-panel-hover flex flex-col gap-3 text-left">
@@ -771,7 +756,7 @@ export default function App() {
                         <CheckCircle className="w-5 h-5" />
                       </div>
                       <h3 className="font-bold text-white text-base">Lifetime Access</h3>
-                      <p className="text-xs text-gray-400 leading-relaxed">Once purchased with easy EasyPaisa/JazzCash methods, enjoy infinite access across your safe verified browser device.</p>
+                      <p className="text-xs text-gray-400 leading-relaxed">Once purchased via WPay secure checkout, enjoy lifetime access across your verified browser device.</p>
                     </div>
                   </div>
                 </div>
@@ -864,11 +849,11 @@ export default function App() {
 
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                     {[
-                      { name: "Forex Trading", icon: Globe, count: "SMC Strategy" },
-                      { name: "Crypto Trading", icon: Coins, count: "Scalping Flow" },
-                      { name: "Stock Market", icon: LineChart, count: "Fundamentals" },
-                      { name: "Technical Analysis", icon: Compass, count: "Indicators" },
-                      { name: "Risk Management", icon: Award, count: "Mindset Core" },
+                      { name: "Color Trading", icon: Globe, count: "Big/Small Patterns" },
+                      { name: "Money Management", icon: Coins, count: "Capital Staging" },
+                      { name: "Pattern Strategies", icon: LineChart, count: "Entry Setups" },
+                      { name: "Trading Psychology", icon: Compass, count: "Discipline" },
+                      { name: "Risk Management", icon: Award, count: "Stop Rules" },
                     ].map((categ, idx) => (
                       <div 
                         key={idx}
@@ -899,8 +884,8 @@ export default function App() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {[
-                      { name: "Arsalan Khan", role: "SMC Day Trader", txt: "The level of detail on how Tayyab explains Order Block sweeps inside this application actually revolutionized my trading. The watermarked video streaming is so secure and smooth!", stars: 5 },
-                      { name: "Mehak Fatima", role: "Crypto Scalper", txt: "I spent thousands of PKR in other fake academies. Trade With Tayyab gave me the direct VWAP & orderbook blueprint. Highly recommended, EasyPaisa checkout was instant!", stars: 5 }
+                      { name: "Arsalan Khan", role: "Color Trader", txt: "The way Tayyab explains the Big-Small pattern sequences is crystal clear. I applied the 3 Big / 3 Small pattern on my first week and it changed everything. The secure video platform makes learning so smooth!", stars: 5 },
+                      { name: "Mehak Fatima", role: "Color Trading Student", txt: "I wasted money in other fake academies. Trade With Tayyab's Color Trading eBook and courses gave me a real system with clear rules. The WPay checkout was instant and my content unlocked immediately!", stars: 5 }
                     ].map((test, idx) => (
                       <div key={idx} className="p-5 rounded-xl glass-panel border border-white/5 space-y-3.5 text-left">
                         <div className="flex justify-between items-center">
@@ -968,7 +953,7 @@ export default function App() {
 
                 {/* Categories Filter tab list */}
                 <div className="flex flex-wrap gap-1.5">
-                  {["All", "Forex Trading", "Crypto Trading", "Stock Market", "Technical Analysis", "Risk Management"].map((cat) => (
+                  {["All", "Color Trading", "Money Management", "Pattern Strategies", "Trading Psychology", "Risk Management"].map((cat) => (
                     <button
                       key={cat}
                       onClick={() => { setCourseCategoryFilter(cat); setCoursePage(1); }}
@@ -1195,7 +1180,7 @@ export default function App() {
                       </div>
                       <div>
                         <p className="text-white font-bold font-sans text-xs">Tayyab • Pakistan Trading Mentor</p>
-                        <p className="text-[11px] text-gray-405">Forex SMC & Cryptocurrencies volume Analyst with +5 years offline trading records.</p>
+                        <p className="text-[11px] text-gray-405">Color Trading Expert with 5+ years of trading experience in Big/Small pattern strategies.</p>
                       </div>
                     </div>
                   </div>
@@ -1286,12 +1271,12 @@ export default function App() {
                       onClick={() => handleEnrollInitiation(selectedCourse)}
                       className="w-full py-3 rounded-xl bg-brand-purple hover:bg-brand-violet text-white font-bold text-xs tracking-wide transition glow-dot-purple cursor-pointer"
                     >
-                      Buy using EasyPaisa / JazzCash
+                      Buy Now via WPay
                     </button>
                   )}
                   
                   <p className="text-[10px] text-gray-500 text-center font-mono leading-relaxed">
-                    Pakistan Bank Transfers managed securely by admin reviews on easy order submission IDs.
+                    Payments processed securely via WPay gateway. EasyPaisa & JazzCash supported through WPay.
                   </p>
                 </div>
               </div>
@@ -1333,7 +1318,7 @@ export default function App() {
                       </div>
                       <div>
                         <p className="text-white font-bold font-sans text-xs">Tayyab • Pakistan Trading Mentor</p>
-                        <p className="text-[11px] text-gray-405">Forex SMC & Cryptocurrencies volume Analyst with +5 years offline trading records.</p>
+                        <p className="text-[11px] text-gray-405">Color Trading Expert with 5+ years of trading experience in Big/Small pattern strategies.</p>
                       </div>
                     </div>
                   </div>
@@ -1402,12 +1387,12 @@ export default function App() {
                       onClick={() => handlePdfPurchaseInitiation(selectedPdf)}
                       className="w-full py-3 rounded-xl bg-brand-purple hover:bg-brand-violet text-white font-bold text-xs tracking-wide transition glow-dot-purple cursor-pointer"
                     >
-                      Buy using EasyPaisa / JazzCash
+                      Buy Now via WPay
                     </button>
                   )}
 
                   <p className="text-[10px] text-gray-500 text-center font-mono leading-relaxed">
-                    Pakistan Bank Transfers managed securely by admin reviews on easy order submission IDs.
+                    Payments processed securely via WPay gateway. EasyPaisa & JazzCash supported through WPay.
                   </p>
                 </div>
               </div>
@@ -1463,7 +1448,7 @@ export default function App() {
                 <div className="lg:col-span-4 space-y-6 text-left font-sans">
                   <div className="space-y-1.5">
                     <h1 className="text-2xl font-extrabold text-white">Get in Touch</h1>
-                    <p className="text-xs text-gray-400 leading-relaxed">Have custom questions about our SMC curriculum or EasyPaisa payments? Reach out directly via Pakistan channels.</p>
+                    <p className="text-xs text-gray-400 leading-relaxed">Have questions about our Color Trading curriculum or payment via WPay? Reach out directly via Pakistan channels.</p>
                   </div>
 
                   <div className="space-y-4">
@@ -1857,139 +1842,45 @@ export default function App() {
 
       </div>
 
-      {/* EASYPAISA / JAZZCASH / WPAY POPUP ORDER MODAL */}
+      {/* WPAY PAYMENT MODAL */}
       {paymentModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans">
           <div className="relative w-full max-w-md bg-brand-card rounded-2xl border border-brand-purple/30 p-6 space-y-5 text-left text-xs">
             <h3 className="text-sm font-bold text-white uppercase font-mono tracking-wider flex items-center justify-between">
-              <span>Enrolling in Premium Class</span>
-              {payMethod === "WPay" && (
-                <span className="text-[9px] bg-brand-purple/20 text-brand-purple px-1.5 py-0.5 rounded border border-brand-purple/30 font-bold tracking-wide uppercase">
-                  WPay Direct Gateway
-                </span>
-              )}
+              <span>Complete Your Purchase</span>
+              <span className="text-[9px] bg-brand-purple/20 text-brand-purple px-1.5 py-0.5 rounded border border-brand-purple/30 font-bold tracking-wide uppercase">
+                WPay Secure Gateway
+              </span>
             </h3>
             
             <p className="text-gray-400">
-              You are purchasing "{paymentModalProduct.title}" for **{paymentModalProduct.price.toLocaleString()} PKR**. Select your preferred checkout option below:
+              You are purchasing <span className="text-white font-semibold">"{paymentModalProduct.title}"</span> for <span className="text-amber-400 font-bold font-mono">{paymentModalProduct.price.toLocaleString()} PKR</span>.
             </p>
 
-            {payMethod !== "WPay" ? (
-              <div className="p-3 bg-brand-purple/5 border border-brand-purple/20 rounded-xl space-y-2">
-                <span className="block text-[10px] uppercase font-extrabold font-mono text-[#a78bfa]">Target Transfer Account Info:</span>
-                <div className="space-y-1 text-gray-300 font-sans">
-                  <p>🔹 **Account Method:** EasyPaisa / JazzCash Account</p>
-                  <p>🔹 **Payment Phone Number:** <span className="font-mono text-white font-bold select-all">03169820955</span></p>
-                  <p>🔹 **Account Holder Name:** TAYYAB MEHMOOD</p>
-                </div>
+            <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 text-[10px] uppercase font-extrabold font-mono text-emerald-400">
+                <Shield className="w-3.5 h-3.5" />
+                <span>WPay Secure Checkout</span>
               </div>
-            ) : (
-              <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-[10px] uppercase font-extrabold font-mono text-emerald-400">
-                  <span>WPay SECURE METADATA:</span>
-                  <span className="text-[8px] opacity-75">Callback Active • 27.124.45.41</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-300 font-mono">
-                  <p>ID: <span className="text-white font-bold">{wpayMerchantId}</span></p>
-                  <p>USER: <span className="text-white font-bold">{wpayUsername}</span></p>
-                  <p className="col-span-2">PASS: <span className="text-white font-bold">{wpayPassword}</span></p>
-                </div>
-              </div>
-            )}
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                You will be charged via your WPay wallet. EasyPaisa and JazzCash account holders can also pay through the WPay gateway. Enter your WPay wallet number below to proceed.
+              </p>
+            </div>
 
             <form onSubmit={submitPaymentForm} className="space-y-4">
               <div className="space-y-1.5 text-left">
-                <label className="text-[10px] uppercase font-bold text-gray-450 font-mono block">Select payment Method</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPayMethod("EasyPaisa")}
-                    className={`p-2 rounded-lg border text-center font-bold transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                      payMethod === "EasyPaisa" 
-                        ? "bg-brand-purple border-brand-purple text-white" 
-                        : "bg-black/35 border-white/5 text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <Landmark className="w-3.5 h-3.5" />
-                    <span className="text-[9px]">EasyPaisa</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayMethod("JazzCash")}
-                    className={`p-2 rounded-lg border text-center font-bold transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                      payMethod === "JazzCash" 
-                        ? "bg-brand-purple border-brand-purple text-white" 
-                        : "bg-black/35 border-white/5 text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span className="text-[9px]">JazzCash</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayMethod("WPay")}
-                    className={`p-2 rounded-lg border text-center font-bold transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                      payMethod === "WPay" 
-                        ? "bg-brand-purple border-brand-purple text-white" 
-                        : "bg-black/35 border-white/5 text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-[9px]">WPay Instant</span>
-                  </button>
-                </div>
-              </div>
-
-              {payMethod === "WPay" && (
-                <div className="grid grid-cols-2 gap-2 p-3 bg-black/45 rounded-lg border border-white/5 space-y-2">
-                  <div className="col-span-2 space-y-1 text-left">
-                    <span className="text-[9px] text-[#c084fc] font-semibold italic">WPay Authorization Gateway (Pre-populated keys for frictionless checks)</span>
-                  </div>
-                  <div className="space-y-1 text-left">
-                    <label className="text-[9px] uppercase font-mono text-gray-400">Merchant ID</label>
-                    <input
-                      type="text"
-                      required
-                      value={wpayMerchantId}
-                      onChange={(e) => setWpayMerchantId(e.target.value)}
-                      className="w-full bg-brand-bg border border-white/10 rounded px-2 py-1 text-[10px] text-white font-mono focus:outline-none"
-                    />
-                  </div>
-                  <div className="space-y-1 text-left">
-                    <label className="text-[9px] uppercase font-mono text-gray-400">Merchant User</label>
-                    <input
-                      type="text"
-                      required
-                      value={wpayUsername}
-                      onChange={(e) => setWpayUsername(e.target.value)}
-                      className="w-full bg-brand-bg border border-white/10 rounded px-2 py-1 text-[10px] text-white font-mono focus:outline-none"
-                    />
-                  </div>
-                  <div className="col-span-2 space-y-1 text-left">
-                    <label className="text-[9px] uppercase font-mono text-gray-400">Merchant Password</label>
-                    <input
-                      type="password"
-                      required
-                      value={wpayPassword}
-                      onChange={(e) => setWpayPassword(e.target.value)}
-                      className="w-full bg-brand-bg border border-white/10 rounded px-2 py-1 text-[10px] text-white font-mono focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5 text-left">
                 <label className="text-[10px] uppercase font-bold text-gray-400 block pb-0.5">
-                  {payMethod === "WPay" ? "Your Sender Wallet Account ID" : "Your Sender Mobile Number"}
+                  Your WPay Wallet / Account Number
                 </label>
                 <input
                   type="text"
                   required
                   value={payNumber}
                   onChange={(e) => setPayNumber(e.target.value)}
-                  placeholder="e.g. 03xxxxxxxxx (sender account)"
+                  placeholder="e.g. 03xxxxxxxxx"
                   className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-brand-purple/50 font-mono text-xs"
                 />
+                <p className="text-[10px] text-gray-500 font-mono">EasyPaisa / JazzCash users: enter your registered mobile number</p>
               </div>
 
               <div className="flex gap-2 justify-end pt-2">
@@ -2004,7 +1895,7 @@ export default function App() {
                   type="submit"
                   className="px-4 py-2 bg-brand-purple hover:bg-brand-violet text-white rounded-lg font-bold glow-dot-purple cursor-pointer"
                 >
-                  {payMethod === "WPay" ? "Authorize WPay Direct" : "Submit Order"}
+                  Pay via WPay
                 </button>
               </div>
             </form>

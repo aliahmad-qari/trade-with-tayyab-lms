@@ -17,9 +17,10 @@ export default defineConfig(() => {
       emptyOutDir: true,
     },
     server: {
-      port: 3000,
+      port: 5173,
       host: '0.0.0.0',
-      // Dynamic proxy for local standalone frontend testing (when manually run)
+      // Proxy /api calls to the backend during local development.
+      // Backend runs on port 3000; frontend runs on port 5173.
       proxy: {
         '/api': {
           target: 'http://localhost:3000',

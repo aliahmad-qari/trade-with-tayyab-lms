@@ -16,7 +16,7 @@ export default function Footer({ setActiveTab }: FooterProps) {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-          
+
           {/* Column 1: App Info */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setActiveTab("home")}>
@@ -30,9 +30,9 @@ export default function Footer({ setActiveTab }: FooterProps) {
                 <p className="text-[9px] font-mono tracking-widest text-[#a78bfa]/60 uppercase">SMC Trading Academy</p>
               </div>
             </div>
-            
+
             <p className="text-xs text-gray-400 leading-relaxed max-w-sm">
-              Empowering financial minds with high-consequence Forex Smart Money Concepts (SMC), market liquidity sweeps, and crypto scalping solutions in Pakistan and globally.
+              Empowering financial minds with high-consequence Color Trading strategies, market prediction models, and real-time analysis solutions in Pakistan and globally.
             </p>
 
             <div className="flex items-center gap-3 pt-2">
