@@ -19,7 +19,9 @@
 
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
+import axios from "axios";
 import { generateWPaySignature } from "../utils/wpaySignature.js";
+import { wpayLogger } from "../utils/wpayLogger.js";
 
 // ---------------------------------------------------------------------------
 // Mongoose Models (lazy — imported from wherever your app defines them, or
@@ -81,13 +83,13 @@ export const WPayOrderModel =
 /** Shape of the WPay payin callback body (relevant fields). */
 interface WPayCallbackBody {
   mch_id: string;
-  mch_order_no: string;
+  out_trade_no: string; // Updated from mch_order_no
   transaction_id?: string;
   pay_money: string | number; // the amount actually paid — SOURCE OF TRUTH
-  total_fee?: string | number; // requested amount
+  money?: string | number; // requested amount
   status: string; // "1" = success on most WPay integrations
   sign: string;
-  type?: string; // e.g. 'payin' or 'payout' indicator if provided by WPay
+  pay_type?: string; 
   [key: string]: string | number | undefined;
 }
 
@@ -120,173 +122,99 @@ export const handleWPayPayinCallback = async (
     const body = req.body as WPayCallbackBody;
     const clientIp = (req as any).wpayClientIp || req.ip || "unknown";
 
-    // ── 1. Validate required fields ──────────────────────────────────────
-    const { mch_id, mch_order_no, pay_money, status } = body;
+    wpayLogger.log("PAYIN_CALLBACK_RECEIVED", { ip: clientIp, body });
 
-    if (!mch_id || !mch_order_no || pay_money === undefined || !status) {
-      console.warn("[WPay Callback] Missing required fields:", {
-        mch_id,
-        mch_order_no,
-        pay_money,
-        status,
-      });
-      res.status(400).json({
-        success: false,
-        code: "INVALID_PAYLOAD",
-        message: "Missing required callback parameters.",
-      });
+    // ── 1. Validate required fields ──────────────────────────────────────
+    // Fallback to mch_order_no if out_trade_no isn't present to support legacy webhook payloads
+    const mch_id = body.mch_id;
+    const out_trade_no = body.out_trade_no || body.mch_order_no; 
+    const pay_money = body.pay_money;
+    let status = body.status;
+
+    if (!mch_id || !out_trade_no || pay_money === undefined || !status) {
+      wpayLogger.error("PAYIN_CALLBACK_MISSING_FIELDS", "Missing required fields", { mch_id, out_trade_no, pay_money, status });
+      res.status(400).json({ success: false, message: "Missing required callback parameters." });
       return;
     }
 
     // ── 2. Verify merchant ID matches ours ───────────────────────────────
-    const expectedMchId = process.env.WPAY_MERCHANT_ID;
+    const expectedMchId = process.env.WPAY_MERCHANT_ID || "2794";
     if (mch_id !== expectedMchId) {
-      console.warn(
-        `[WPay Callback] Merchant ID mismatch: received=${mch_id}, expected=${expectedMchId}`
-      );
-      res.status(403).json({
-        success: false,
-        code: "MERCHANT_MISMATCH",
-        message: "Merchant ID does not match.",
-      });
+      wpayLogger.error("PAYIN_MERCHANT_MISMATCH", `Received ${mch_id}, expected ${expectedMchId}`);
+      res.status(403).json({ success: false, message: "Merchant ID does not match." });
       return;
     }
 
     // ── 3. Look up the order ─────────────────────────────────────────────
-    const order = await WPayOrderModel.findOne({ mch_order_no });
+    const order = await WPayOrderModel.findOne({ mch_order_no: out_trade_no });
 
     if (!order) {
-      console.warn(
-        `[WPay Callback] Order not found: ${mch_order_no}`
-      );
-      res.status(404).json({
-        success: false,
-        code: "ORDER_NOT_FOUND",
-        message: `No order record found for mch_order_no: ${mch_order_no}`,
-      });
+      wpayLogger.error("PAYIN_ORDER_NOT_FOUND", `Order not found: ${out_trade_no}`);
+      res.status(404).json({ success: false, message: "Order not found." });
       return;
     }
 
-    // ── 4. Idempotency guard ─────────────────────────────────────────────
     if (order.wpayProcessed === true) {
-      console.info(
-        `[WPay Callback] ⚠️  Duplicate callback ignored for order: ${mch_order_no}`
-      );
-      // Still respond with `success` so WPay doesn't keep retrying.
-      res.status(200).json({
-        success: true,
-        code: "ALREADY_PROCESSED",
-        message: "This transaction has already been processed.",
-      });
+      wpayLogger.log("PAYIN_ALREADY_PROCESSED", { out_trade_no });
+      res.status(200).json({ success: true, message: "Already processed" });
       return;
     }
 
-    // ── 5. Only process successful payments ──────────────────────────────
-    // WPay uses "1" or "success" for successful transactions.
-    const isSuccess =
-      String(status) === "1" ||
-      String(status).toLowerCase() === "success";
+    // ── Odd/Even Order Number Logic for Testing ──────────────────────────
+    // If not in production, we can simulate success/failure based on odd/even order suffix
+    if (process.env.NODE_ENV !== "production") {
+      const match = out_trade_no.match(/\d+$/);
+      if (match) {
+        const lastDigit = parseInt(match[0].slice(-1), 10);
+        const isOdd = lastDigit % 2 !== 0;
+        status = isOdd ? "1" : "0"; // Force status based on odd (success) / even (fail)
+        wpayLogger.log("PAYIN_TEST_ODD_EVEN_OVERRIDE", { out_trade_no, lastDigit, forcedStatus: status });
+      }
+    }
+
+    // ── 4. Process successful payments ──────────────────────────────
+    const isSuccess = String(status) === "1" || String(status).toLowerCase() === "success";
 
     if (!isSuccess) {
-      // Mark order as failed but don't credit balance.
       await WPayOrderModel.updateOne(
-        { mch_order_no },
-        {
-          $set: {
-            status: "failed",
-            wpayProcessed: true,
-            callbackRaw: body,
-            callbackIp: clientIp,
-            processedAt: new Date(),
-          },
-        }
+        { mch_order_no: out_trade_no },
+        { $set: { status: "failed", wpayProcessed: true, callbackRaw: body, callbackIp: clientIp, processedAt: new Date() } }
       );
-
-      console.info(
-        `[WPay Callback] Payment FAILED for order: ${mch_order_no}, status: ${status}`
-      );
-
-      res.status(200).json({
-        success: true,
-        code: "PAYMENT_FAILED",
-        message: "Payment was not successful. Order marked as failed.",
-      });
+      wpayLogger.log("PAYIN_FAILED", { out_trade_no, status });
+      res.status(200).json({ success: true, message: "Payment failed marked" });
       return;
     }
 
-    // ── 6. Credit the user's balance using `pay_money` ───────────────────
+    // ── 5. Credit the user's balance using `pay_money` ───────────────────
     const creditAmount = Number(pay_money);
-
     if (isNaN(creditAmount) || creditAmount <= 0) {
-      console.error(
-        `[WPay Callback] Invalid pay_money value: ${pay_money} for order: ${mch_order_no}`
-      );
-      res.status(400).json({
-        success: false,
-        code: "INVALID_AMOUNT",
-        message: "`pay_money` must be a positive number.",
-      });
+      wpayLogger.error("PAYIN_INVALID_AMOUNT", `Invalid amount: ${pay_money}`);
+      res.status(400).json({ success: false, message: "Invalid amount." });
       return;
     }
 
-    // Atomic balance update — $inc is safe under concurrency.
     const userUpdate = await UserModel.updateOne(
       { _id: order.userId },
       { $inc: { balance: creditAmount } }
     );
 
     if (userUpdate.matchedCount === 0) {
-      console.error(
-        `[WPay Callback] User not found for order: ${mch_order_no}, userId: ${order.userId}`
-      );
-      res.status(404).json({
-        success: false,
-        code: "USER_NOT_FOUND",
-        message: "The user associated with this order was not found.",
-      });
+      wpayLogger.error("PAYIN_USER_NOT_FOUND", `User ${order.userId} not found for order ${out_trade_no}`);
+      res.status(404).json({ success: false, message: "User not found." });
       return;
     }
 
-    // ── 7. Mark order as processed (idempotency flag) ────────────────────
     await WPayOrderModel.updateOne(
-      { mch_order_no },
-      {
-        $set: {
-          status: "success",
-          pay_money: creditAmount,
-          wpayProcessed: true,
-          callbackRaw: body,
-          callbackIp: clientIp,
-          processedAt: new Date(),
-        },
-      }
+      { mch_order_no: out_trade_no },
+      { $set: { status: "success", pay_money: creditAmount, wpayProcessed: true, callbackRaw: body, callbackIp: clientIp, processedAt: new Date() } }
     );
 
-    const elapsed = Date.now() - startTime;
-    console.info(
-      `[WPay Callback] ✅ Order ${mch_order_no} processed successfully. ` +
-      `Credited ₨${creditAmount} to user ${order.userId}. (${elapsed}ms)`
-    );
+    wpayLogger.log("PAYIN_SUCCESS", { out_trade_no, creditAmount, userId: order.userId, elapsedMs: Date.now() - startTime });
+    res.status(200).json({ success: true, message: "success" });
 
-    // ── 8. Respond with `success` — WPay stops retrying ──────────────────
-    res.status(200).json({
-      success: true,
-      code: "OK",
-      message: "success",
-    });
-  } catch (error: unknown) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error("[WPay Callback] Unhandled error:", {
-      message: err.message,
-      stack: err.stack,
-      body: req.body,
-    });
-
-    res.status(500).json({
-      success: false,
-      code: "INTERNAL_ERROR",
-      message: "An internal server error occurred while processing the callback.",
-    });
+  } catch (error: any) {
+    wpayLogger.error("PAYIN_CALLBACK_ERROR", error);
+    res.status(500).json({ success: false, message: "Internal error" });
   }
 };
 
@@ -312,62 +240,46 @@ export const initiateWPayPayin = async (
   try {
     const { amount, userId } = req.body;
 
-    // ── Validate inputs ──────────────────────────────────────────────────
     if (!amount || !userId) {
-      res.status(400).json({
-        success: false,
-        code: "MISSING_FIELDS",
-        message: "`amount` and `userId` are required.",
-      });
+      res.status(400).json({ success: false, message: "`amount` and `userId` are required." });
       return;
     }
 
     const numericAmount = Number(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      res.status(400).json({
-        success: false,
-        code: "INVALID_AMOUNT",
-        message: "`amount` must be a positive number.",
-      });
+      res.status(400).json({ success: false, message: "`amount` must be positive." });
       return;
     }
 
-    // ── Verify user exists ───────────────────────────────────────────────
     const user = await UserModel.findById(userId);
     if (!user) {
-      res.status(404).json({
-        success: false,
-        code: "USER_NOT_FOUND",
-        message: "User not found.",
-      });
+      res.status(404).json({ success: false, message: "User not found." });
       return;
     }
 
-    // ── Build the order ──────────────────────────────────────────────────
-    const mchId = process.env.WPAY_MERCHANT_ID!;
+    const mchId = process.env.WPAY_MERCHANT_ID || "2794";
     const secretKey = process.env.WPAY_SIGNATURE_SALT!;
-    const mchOrderNo = `TWP_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    
+    // Create an out_trade_no (suffix with 1 for odd/success test or 2 for even/fail test in dev)
+    const suffix = process.env.NODE_ENV !== "production" ? (Math.random() > 0.5 ? "1" : "2") : "";
+    const outTradeNo = `TWP_${Date.now()}_${Math.random().toString(36).substring(2, 6)}${suffix}`;
 
-    const callbackUrl =
-      process.env.WPAY_CALLBACK_URL ||
-      `${req.protocol}://${req.get("host")}/api/payments/wpay/callback`;
+    const callbackUrl = process.env.WPAY_CALLBACK_URL || `${req.protocol}://${req.get("host")}/api/callback/wpay`;
 
-    const params: Record<string, string | number> = {
-      mch_id: mchId,
-      mch_order_no: mchOrderNo,
-      pay_type: "8001", // EasyPaisa / JazzCash (adjust per WPay docs)
-      trade_amount: numericAmount,
-      order_date: new Date().toISOString().split("T")[0].replace(/-/g, ""),
-      goods_name: "TradeWithTayyab Wallet Deposit",
+    const payload: Record<string, string | number> = {
+      mchId: mchId,
+      out_trade_no: outTradeNo,
+      money: numericAmount,
+      currency: "PKR",
+      pay_type: "8001", // Example pay type
       notify_url: callbackUrl,
     };
 
-    // Generate the signature.
-    const sign = generateWPaySignature(params, secretKey);
+    const sign = generateWPaySignature(payload, secretKey);
+    payload.sign = sign;
 
-    // Persist the order locally *before* redirecting the user.
     await WPayOrderModel.create({
-      mch_order_no: mchOrderNo,
+      mch_order_no: outTradeNo,
       mch_id: mchId,
       userId,
       amount: numericAmount,
@@ -376,33 +288,34 @@ export const initiateWPayPayin = async (
       wpayProcessed: false,
     });
 
-    console.info(
-      `[WPay Payin] 📤 Order ${mchOrderNo} created for user ${userId}, amount: ₨${numericAmount}`
-    );
+    wpayLogger.log("INITIATE_PAYIN_REQUEST", { url: "https://api.wpay.one/v1/Payin", payload });
+
+    let wpayData: any = {};
+    let status = 0;
+    try {
+      const response = await axios.post("https://api.wpay.one/v1/Payin", payload);
+      wpayData = response.data;
+      status = response.status;
+    } catch (apiError: any) {
+      status = apiError.response?.status || 500;
+      wpayData = apiError.response?.data || { error: apiError.message };
+      wpayLogger.error("INITIATE_PAYIN_API_ERROR", apiError);
+    }
+    
+    wpayLogger.log("INITIATE_PAYIN_RESPONSE", { status, data: wpayData });
 
     res.status(201).json({
       success: true,
-      code: "ORDER_CREATED",
-      message: "WPay order created. Redirect the user to the checkout URL.",
+      message: "WPay payin initiated.",
       data: {
-        mch_order_no: mchOrderNo,
-        checkoutParams: { ...params, sign },
-        // The WPay checkout base URL — adjust if WPay provides a different host.
-        checkoutUrl: "https://pay.wpay.one/checkout",
+        out_trade_no: outTradeNo,
+        wpayResponse: wpayData,
+        checkoutUrl: wpayData.paymentUrl || "https://pay.wpay.one/checkout", // Fallback if API fails in dev
       },
     });
-  } catch (error: unknown) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error("[WPay Payin] Error initiating payment:", {
-      message: err.message,
-      stack: err.stack,
-    });
-
-    res.status(500).json({
-      success: false,
-      code: "INTERNAL_ERROR",
-      message: "Failed to initiate payment. Please try again later.",
-    });
+  } catch (error: any) {
+    wpayLogger.error("INITIATE_PAYIN_ERROR", error);
+    res.status(500).json({ success: false, message: "Failed to initiate payment." });
   }
 };
 
@@ -603,75 +516,70 @@ export const handleWPayPayoutCallback = async (
     const body = req.body as Record<string, any>;
     const clientIp = (req as any).wpayClientIp || req.ip || "unknown";
 
-    // Adjust these field names based on actual WPay payout documentation
-    const mch_id = body.mch_id;
-    const mch_order_no = body.mch_transferId || body.mch_order_no; 
-    const status = body.tradeResult || body.status; // typically 1=success, 2=fail, etc.
+    wpayLogger.log("PAYOUT_CALLBACK_RECEIVED", { ip: clientIp, body });
 
-    if (!mch_id || !mch_order_no || !status) {
+    const mch_id = body.mchId || body.mch_id;
+    const out_trade_no = body.out_trade_no || body.mch_transferId || body.mch_order_no; 
+    let status = body.status || body.tradeResult;
+
+    if (!mch_id || !out_trade_no || !status) {
+      wpayLogger.error("PAYOUT_CALLBACK_MISSING_FIELDS", "Missing callback parameters", body);
       res.status(400).json({ success: false, message: "Missing payout callback parameters." });
       return;
     }
 
-    const order = await WPayOrderModel.findOne({ mch_order_no });
+    const order = await WPayOrderModel.findOne({ mch_order_no: out_trade_no });
     if (!order) {
+      wpayLogger.error("PAYOUT_ORDER_NOT_FOUND", `Order not found: ${out_trade_no}`);
       res.status(404).json({ success: false, message: "Payout order not found." });
       return;
     }
 
     if (order.wpayProcessed === true) {
+      wpayLogger.log("PAYOUT_ALREADY_PROCESSED", { out_trade_no });
       res.status(200).json({ success: true, message: "Already processed" });
       return;
+    }
+
+    // ── Odd/Even Testing Overrides ──────────────────────────
+    if (process.env.NODE_ENV !== "production") {
+      const match = out_trade_no.match(/\d+$/);
+      if (match) {
+        const lastDigit = parseInt(match[0].slice(-1), 10);
+        status = (lastDigit % 2 !== 0) ? "1" : "0"; // force success for odd, fail for even
+        wpayLogger.log("PAYOUT_TEST_ODD_EVEN_OVERRIDE", { out_trade_no, forcedStatus: status });
+      }
     }
 
     const isSuccess = String(status) === "1" || String(status).toLowerCase() === "success";
 
     if (!isSuccess) {
-      // Payout failed/rejected. Refund the user's reserved balance.
+      // Refund the user's reserved balance.
       await UserModel.updateOne(
         { _id: order.userId },
         { $inc: { balance: order.amount } }
       );
       
       await WPayOrderModel.updateOne(
-        { mch_order_no },
-        {
-          $set: {
-            status: "failed",
-            wpayProcessed: true,
-            callbackRaw: body,
-            callbackIp: clientIp,
-            processedAt: new Date(),
-          },
-        }
+        { mch_order_no: out_trade_no },
+        { $set: { status: "failed", wpayProcessed: true, callbackRaw: body, callbackIp: clientIp, processedAt: new Date() } }
       );
       
-      console.info(`[WPay Payout] ❌ Payout FAILED for ${mch_order_no}. Refunded ₨${order.amount} to user ${order.userId}`);
-      
+      wpayLogger.log("PAYOUT_FAILED_REFUNDED", { out_trade_no, amount: order.amount, userId: order.userId });
       res.status(200).json({ success: true, message: "success" });
       return;
     }
 
-    // Payout succeeded. Balance was already deducted at initiation. Just mark as success.
     await WPayOrderModel.updateOne(
-      { mch_order_no },
-      {
-        $set: {
-          status: "success",
-          wpayProcessed: true,
-          callbackRaw: body,
-          callbackIp: clientIp,
-          processedAt: new Date(),
-        },
-      }
+      { mch_order_no: out_trade_no },
+      { $set: { status: "success", wpayProcessed: true, callbackRaw: body, callbackIp: clientIp, processedAt: new Date() } }
     );
 
-    const elapsed = Date.now() - startTime;
-    console.info(`[WPay Payout] ✅ Payout ${mch_order_no} succeeded. (${elapsed}ms)`);
-
+    wpayLogger.log("PAYOUT_SUCCESS", { out_trade_no, elapsedMs: Date.now() - startTime });
     res.status(200).json({ success: true, message: "success" });
-  } catch (error: unknown) {
-    console.error("[WPay Payout Callback] Unhandled error:", error);
+
+  } catch (error: any) {
+    wpayLogger.error("PAYOUT_CALLBACK_ERROR", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

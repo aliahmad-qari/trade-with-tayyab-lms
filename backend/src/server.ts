@@ -390,10 +390,21 @@ app.use(cors({
 
 app.use(express.json());
 
+import { validateWPayIP, verifyWPayCallbackSignature } from "./middleware/wpaySecurityMiddleware.js";
+import { handleWPayPayinCallback } from "./controllers/paymentController.js";
+
 // ── WPay Payment Gateway (modular router) ─────────────────────────────────
 // Production-grade payin callback, initiation, and status endpoints.
 // Protected by IP whitelist + MD5 signature verification middleware.
 app.use("/api/payments/wpay", paymentRouter);
+
+// Explicit protected callback route requested by user
+app.post(
+  "/api/callback/wpay",
+  validateWPayIP,
+  verifyWPayCallbackSignature,
+  handleWPayPayinCallback
+);
 
 // Device and IP Parsing middleware
 app.use((req, res, next) => {
