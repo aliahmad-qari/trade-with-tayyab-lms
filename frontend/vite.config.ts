@@ -20,10 +20,10 @@ export default defineConfig(() => {
       port: 5173,
       host: '0.0.0.0',
       // Proxy /api calls to the backend during local development.
-      // Backend runs on port 3000; frontend runs on port 5173.
+      // Backend runs on port 5000; frontend runs on port 5173.
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: 'http://localhost:5000',
           changeOrigin: true,
         }
       },

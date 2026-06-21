@@ -1,31 +1,20 @@
-import fs from "fs";
-import path from "path";
-
-// Simple file-based logger for WPay requests and responses
-const logFilePath = path.join(process.cwd(), "wpay-transactions.log");
+/**
+ * WPay Logger — console-only (file writes are skipped in production
+ * because Render's filesystem is ephemeral / read-only outside /tmp).
+ */
 
 export const wpayLogger = {
   log: (action: string, data: any) => {
     const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${action}] ${JSON.stringify(data)}\n`;
-    
-    // Write to console
-    console.log(logEntry.trim());
-    
-    // Write to file for audit
-    fs.appendFile(logFilePath, logEntry, (err) => {
-      if (err) console.error("Failed to write to WPay log file:", err);
-    });
+    console.log(`[${timestamp}] [WPAY] [${action}]`, JSON.stringify(data));
   },
-  
+
   error: (action: string, error: any, context?: any) => {
     const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [ERROR] [${action}] ${error?.message || error} - Context: ${JSON.stringify(context || {})}\n`;
-    
-    console.error(logEntry.trim());
-    
-    fs.appendFile(logFilePath, logEntry, (err) => {
-      if (err) console.error("Failed to write to WPay log file:", err);
-    });
-  }
+    console.error(
+      `[${timestamp}] [WPAY] [ERROR] [${action}]`,
+      error?.message || error,
+      context ? JSON.stringify(context) : ""
+    );
+  },
 };
