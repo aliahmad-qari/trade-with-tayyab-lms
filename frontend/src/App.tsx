@@ -369,44 +369,97 @@ export default function App() {
     setPayNumber("");
   };
 
+  /**
+   * handleBuyNow — WPay "Buy Now" button click handler.
+   *
+   * Flow:
+   *   1. POST to /api/{courses|pdfs}/:id/enroll-wpay
+   *      → backend creates a pending order in MongoDB and calls WPay /v1/Payin
+   *      → backend returns { success: true, payment_url: "https://wpay.one/..." }
+   *   2. Redirect the user to the WPay-hosted checkout page.
+   *      WPay handles payment, then calls our /api/wpay/callback which sets
+   *      order.isPaid = true and approves access.
+   *
+   * [DEBUG] Uncomment the console.log lines to inspect the request/response
+   *         while testing against the WPay sandbox.
+   */
   const submitPaymentForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentModalProduct) return;
-    if (!payNumber) {
+
+    // ── Input validation ─────────────────────────────────────────────────────
+    if (!payNumber.trim()) {
       addToast("Please enter your WPay wallet account number.", "error");
       return;
     }
 
+    setIsSubmitLoading(true);
+
     try {
-      const base = paymentModalProduct.kind === "pdf" ? "pdfs" : "courses";
-      const targetEndpoint = `/api/${base}/${paymentModalProduct.id}/enroll-wpay`;
+      // ── Step 1: Create order on backend and request WPay checkout URL ──────
+      const resourceBase = paymentModalProduct.kind === "pdf" ? "pdfs" : "courses";
+      const enrollEndpoint = `/api/${resourceBase}/${paymentModalProduct.id}/enroll-wpay`;
 
-      const requestBody = {
-        paymentNumber: payNumber,
-        paymentMethod: "WPay"
-      };
+      // [DEBUG] Uncomment to inspect the outgoing request:
+      // console.log("[WPay] Initiating payment for:", paymentModalProduct, "via", enrollEndpoint);
 
-      const res = await fetch(targetEndpoint, {
+      const res = await fetch(enrollEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
+          "Authorization": `Bearer ${authToken}`,
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({
+          paymentNumber: payNumber.trim(),
+          paymentMethod: "WPay",
+        }),
       });
+
       const data = await res.json();
-      if (res.ok) {
-        addToast(data.message, "success");
-        setPaymentModalProduct(null);
-        // Instant Client refresh to show the purchase inside the dashboard!
-        await fetchEnrollments();
-        await fetchPdfs();
-        changeTab("dashboard");
-      } else {
-        addToast(data.message, "error");
+
+      // [DEBUG] Uncomment to inspect the backend response:
+      // console.log("[WPay] Backend response:", data);
+
+      if (!res.ok) {
+        // Handle specific error cases
+        if (data?.alreadyEnrolled) {
+          addToast("You already own this! Redirecting to your dashboard…", "info");
+          setPaymentModalProduct(null);
+          await fetchEnrollments();
+          changeTab("dashboard");
+          return;
+        }
+        addToast(data?.message || "Payment initiation failed. Please try again.", "error");
+        return;
       }
+
+      // ── Step 2: Redirect to WPay-hosted checkout page ───────────────────────
+      if (data?.payment_url) {
+        addToast("Redirecting you to WPay secure checkout…", "info");
+        setPaymentModalProduct(null);
+
+        // Small delay so the user sees the toast before navigation
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        // [DEBUG] Uncomment to verify the redirect URL before navigating:
+        // console.log("[WPay] Redirecting to payment_url:", data.payment_url);
+
+        // Hard redirect to WPay-hosted payment page.
+        // WPay will call /api/wpay/callback after the transaction completes.
+        window.location.href = data.payment_url;
+      } else {
+        // Backend succeeded but returned no checkout URL — should not happen
+        // in production; log and surface a user-friendly error.
+        console.error("[WPay] No payment_url in backend response:", data);
+        addToast("Payment gateway did not return a checkout link. Contact support.", "error");
+      }
+
     } catch (err) {
-      addToast("Connection error sending payment", "error");
+      // [DEBUG] Uncomment to see the full error stack:
+      // console.error("[WPay] Network error during payment initiation:", err);
+      addToast("Network error — please check your connection and try again.", "error");
+    } finally {
+      setIsSubmitLoading(false);
     }
   };
 
@@ -851,6 +904,97 @@ export default function App() {
                     })}
                   </div>
                 </div>
+
+                {/* FEATURED PDF / DIGITAL RESOURCES — HOME PAGE */}
+                {pdfs.filter(p => p.isPublished !== false).length > 0 && (
+                  <div className="space-y-10">
+                    <div className="text-center space-y-2">
+                      <span className="text-[10px] text-emerald-400 font-mono uppercase font-bold tracking-widest block">Digital Resources</span>
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Premium PDFs & eBooks</h2>
+                      <p className="text-xs text-gray-400 max-w-lg mx-auto font-sans">Exclusive trading eBooks, checklists and cheat sheets curated by Tayyab — instant access after WPay checkout.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {pdfs.filter(p => p.isPublished !== false).slice(0, 3).map((pdf) => {
+                        const isPurchased = purchasedPdfIds.includes(pdf.id);
+                        return (
+                          <div
+                            key={pdf.id}
+                            className="rounded-xl overflow-hidden glass-panel border border-white/5 flex flex-col justify-between group h-full bg-brand-card"
+                          >
+                            <div className="relative aspect-video overflow-hidden">
+                              <img
+                                src={pdf.thumbnailUrl || "https://images.unsplash.com/photo-1554260570-9140fd3b7614?auto=format&fit=crop&w=600&q=80"}
+                                alt={pdf.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute top-2.5 left-2.5 px-2 py-1 bg-black/80 backdrop-blur-md rounded text-[9px] font-bold uppercase border border-emerald-500/30 text-emerald-500">
+                                📄 {pdf.category || "Resource"}
+                              </div>
+                            </div>
+
+                            <div className="p-4 flex-grow flex flex-col justify-between space-y-3">
+                              <div className="space-y-1.5 text-left">
+                                <h3 className="font-extrabold text-white text-sm leading-snug group-hover:text-emerald-400 transition-colors">
+                                  {pdf.title}
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-mono">By Instructor: Tayyab</p>
+                                <p className="text-xs text-gray-300 leading-snug line-clamp-2">{pdf.description}</p>
+                              </div>
+
+                              <div className="space-y-3 pt-2 text-left">
+                                <div className="border-t border-white/5 pt-3.5 flex items-center justify-between">
+                                  <div className="text-left">
+                                    <span className="text-[9px] text-gray-500 block font-mono uppercase">Price</span>
+                                    <span className="text-sm font-extrabold text-amber-400 tracking-tight">
+                                      {pdf.price.toLocaleString()} PKR
+                                    </span>
+                                  </div>
+
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      onClick={() => { setSelectedPdf(pdf); changeTab("pdfdetails"); }}
+                                      className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      Details
+                                    </button>
+                                    {isPurchased ? (
+                                      <button
+                                        onClick={() => changeTab("dashboard")}
+                                        className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[11px] font-bold transition cursor-pointer"
+                                      >
+                                        Read
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handlePdfPurchaseInitiation(pdf)}
+                                        className="px-2.5 py-1 bg-brand-purple hover:bg-brand-violet text-white rounded text-[11px] font-bold transition cursor-pointer"
+                                      >
+                                        Buy Now
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* View all CTA */}
+                    {pdfs.filter(p => p.isPublished !== false).length > 3 && (
+                      <div className="text-center">
+                        <button
+                          onClick={() => changeTab("courses")}
+                          className="px-6 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs border border-white/10 transition cursor-pointer"
+                        >
+                          View All Resources →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* POPULAR CATEGORIES */}
                 <div className="space-y-10">
