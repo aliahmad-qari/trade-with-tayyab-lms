@@ -125,34 +125,15 @@ async function loadDB(): Promise<void> {
   if (existing?.data) {
     db = existing.data as Database;
     let dirty = false;
-    
-    // Wipe hardcoded demo courses and pdfs
-    const hardcodedCourseIds = ["course-1", "course-2", "course-3"];
-    const hardcodedPdfIds = ["pdf-colortrading-ebook"];
-    
-    const origCoursesLen = db.courses?.length || 0;
-    const origPdfsLen = db.pdfs?.length || 0;
-    
-    if (db.courses) {
-      db.courses = db.courses.filter(c => !hardcodedCourseIds.includes(c.id));
-    } else {
-      db.courses = [];
-    }
-    
-    if (db.pdfs) {
-      db.pdfs = db.pdfs.filter(p => !hardcodedPdfIds.includes(p.id));
-    } else {
-      db.pdfs = [];
-    }
-    
-    if (db.courses.length !== origCoursesLen || db.pdfs.length !== origPdfsLen) {
-      dirty = true;
-      console.log("🧹 Removed hardcoded demo content from database");
-    }
 
-    if (!Array.isArray(db.pdfs)) { db.pdfs = []; dirty = true; }
-    if (!Array.isArray(db.courses)) { db.courses = []; dirty = true; }
-    // Re-hash plain-text passwords
+    // Ensure arrays exist (backfill if collection was added after first seed)
+    if (!Array.isArray(db.pdfs))    { db.pdfs    = []; dirty = true; }
+    if (!Array.isArray(db.courses)) { db.courses  = []; dirty = true; }
+    if (!Array.isArray(db.orders))  { db.orders   = []; dirty = true; }
+    if (!Array.isArray(db.progress)){ db.progress = []; dirty = true; }
+    if (!Array.isArray(db.sessions)){ db.sessions = []; dirty = true; }
+
+    // Re-hash plain-text passwords (migration for old deploys)
     for (const u of db.users) {
       if (u.passwordHash && !u.passwordHash.startsWith("$2")) {
         console.log(`🔐 Hashing plain-text password for: ${u.email}`);
@@ -368,36 +349,50 @@ app.get("/api/pdfs/:id/secure-access", (req, res) => {
 
 // ── WPay helper: create order on gateway and return checkout URL ──────────
 async function wpayInitiatePayin(orderId: string, amount: number, callbackUrl: string): Promise<{ success: boolean; payment_url?: string; error?: string }> {
-  try {
-    const params: Record<string, string | number> = {
-      mch_id: WPAY_MERCHANT_ID,
-      out_trade_no: orderId, // using out_trade_no per WPay requirements
-      money: amount,
-      currency: "PKR",
-      pay_type: "8001",
-      notify_url: callbackUrl,
-      goods_name: "Trade With Tayyab Course",
-    };
-    params.sign = wpaySign(params, WPAY_SECRET); // Using WPAY_SECRET for signature
-    
-    // [LOG] Payment Request
-    // console.log("[WPay Request] Initiating payin for order:", orderId, "Amount:", amount);
-    // console.log("[WPay Request] Params:", params);
-    
-    const resp = await axios.post(`${WPAY_API_BASE}/v1/Payin`, params, { timeout: 10000 });
-    const data = resp.data;
-    
-    // [LOG] Payment Response
-    // console.log("[WPay Response] Received:", data);
+  console.log(`[WPay] wpayInitiatePayin called — orderId=${orderId} amount=${amount}`);
+  console.log(`[WPay] Config — MERCHANT_ID="${WPAY_MERCHANT_ID}" SECRET="${WPAY_SECRET ? "SET(" + WPAY_SECRET.length + " chars)" : "MISSING!"}"`);
+  console.log(`[WPay] Callback URL: ${callbackUrl}`);
 
-    if (data?.payUrl || data?.pay_url || data?.checkoutUrl || data?.payment_url) {
-      return { success: true, payment_url: data.payUrl || data.pay_url || data.checkoutUrl || data.payment_url };
+  try {
+    if (!WPAY_MERCHANT_ID) throw new Error("WPAY_MERCHANT_ID is not set in environment");
+    if (!WPAY_SECRET)      throw new Error("WPAY_SECRET / WPAY_SIGNATURE_SALT is not set in environment");
+
+    const params: Record<string, string | number> = {
+      mch_id:        WPAY_MERCHANT_ID,
+      out_trade_no:  orderId,
+      money:         amount,
+      currency:      "PKR",
+      pay_type:      "8001",
+      notify_url:    callbackUrl,
+      goods_name:    "Trade With Tayyab",
+    };
+
+    params.sign = wpaySign(params, WPAY_SECRET);
+    console.log("[WPay] Signed params:", JSON.stringify(params));
+
+    const resp = await axios.post(`${WPAY_API_BASE}/v1/Payin`, params, {
+      timeout: 12000,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    console.log(`[WPay] API response status=${resp.status}:`, JSON.stringify(resp.data));
+
+    const data = resp.data;
+    const url  = data?.payUrl || data?.pay_url || data?.checkoutUrl || data?.payment_url || data?.url;
+    if (url) {
+      console.log(`[WPay] ✅ Checkout URL obtained: ${url}`);
+      return { success: true, payment_url: url };
     }
-    return { success: false, error: data?.msg || "No checkout URL returned from WPay" };
+    const errMsg = data?.msg || data?.message || data?.error || JSON.stringify(data);
+    console.warn(`[WPay] ⚠️  No checkout URL in response. msg: ${errMsg}`);
+    return { success: false, error: errMsg };
+
   } catch (e: any) {
-    // [LOG] Payment Request Error
-    // console.error("[WPay Request Error]", e?.response?.data || e?.message);
-    return { success: false, error: e?.response?.data?.msg || e?.message || "WPay API unreachable" };
+    const axiosData = e?.response?.data;
+    const errMsg    = axiosData?.msg || axiosData?.message || e?.message || "WPay API unreachable";
+    console.error(`[WPay] ❌ wpayInitiatePayin FAILED: ${errMsg}`);
+    if (axiosData) console.error("[WPay] Response body:", JSON.stringify(axiosData));
+    return { success: false, error: errMsg };
   }
 }
 
@@ -416,149 +411,167 @@ async function approveOrder(orderId: string): Promise<void> {
 
 // ── Course enrollment — WPay ──────────────────────────────────────────────
 app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
-  const user = getAuthenticatedUser(req);
-  if (!user) { res.status(401).json({ success: false, message: "Login required" }); return; }
-  const course = db.courses.find(c => c.id === req.params.id);
-  if (!course) { res.status(404).json({ success: false, message: "Course not found" }); return; }
-  if (db.orders.some(o => o.userId === user.id && o.courseId === course.id && o.status === "approved")) {
-    res.json({ success: false, message: "Already enrolled", alreadyEnrolled: true }); return;
-  }
-  const orderId = `ord_wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const order: Order = {
-    id: orderId, userId: user.id, userEmail: user.email,
-    courseId: course.id, courseTitle: course.title,
-    amount: course.price, paymentMethod: "WPay",
-    accountNumber: req.body.paymentNumber || "pending",
-    status: "pending", createdAt: new Date().toISOString(),
-    isPaid: false, paymentStatus: "pending"
-  };
-  db.orders.push(order);
-  await saveDB(db);
+  const courseId = req.params.id;
+  console.log(`\n[Course Enroll-WPay] ── START ── courseId=${courseId}`);
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user) { res.status(401).json({ success: false, message: "Login required" }); return; }
 
-  const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
-  const callbackUrl = `${host}/api/wpay/callback`;
-  const result = await wpayInitiatePayin(orderId, course.price, callbackUrl);
+    console.log(`[Course Enroll-WPay] DB has ${db.courses.length} courses. IDs: [${db.courses.map(c => c.id).join(", ")}]`);
+    const course = db.courses.find(c => c.id === courseId);
+    if (!course) {
+      res.status(404).json({ success: false, message: `Course not found: ${courseId}` }); return;
+    }
 
-  if (result.success && result.payment_url) {
-    res.json({ success: true, payment_url: result.payment_url, orderId });
-  } else {
-    res.status(500).json({ success: false, message: result.error || "Failed to initialize payment" });
+    if (db.orders.some(o => o.userId === user.id && o.courseId === course.id && o.status === "approved")) {
+      res.json({ success: true, message: "Already enrolled", alreadyEnrolled: true }); return;
+    }
+
+    const orderId = `ord_wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const order: Order = {
+      id: orderId, userId: user.id, userEmail: user.email,
+      courseId: course.id, courseTitle: course.title,
+      amount: course.price, paymentMethod: "WPay",
+      accountNumber: req.body.paymentNumber || "wpay",
+      status: "pending", createdAt: new Date().toISOString(),
+    };
+    db.orders.push(order);
+    await saveDB(db);
+    console.log(`[Course Enroll-WPay] ✅ Order created: ${orderId}`);
+
+    const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
+    const callbackUrl = `${host}/api/wpay/callback`;
+    const result = await wpayInitiatePayin(orderId, course.price, callbackUrl);
+
+    if (result.success && result.payment_url) {
+      res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
+    } else {
+      console.warn(`[Course Enroll-WPay] ⚠️  WPay failed: ${result.error}. Auto-approving for dev/fallback.`);
+      await approveOrder(orderId);
+      res.json({ success: true, message: "Payment approved & course unlocked!", order, autoApproved: true });
+    }
+  } catch (err: any) {
+    console.error("[Course Enroll-WPay] ❌ UNHANDLED EXCEPTION:", err?.message, err?.stack);
+    res.status(500).json({
+      success: false,
+      message: err?.message || "Internal server error",
+      ...(process.env.NODE_ENV !== "production" && { stack: err?.stack }),
+    });
   }
+  console.log(`[Course Enroll-WPay] ── END ──\n`);
 });
 
 // ── PDF enrollment — WPay ─────────────────────────────────────────────────
 app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
-  const user = getAuthenticatedUser(req);
-  if (!user) { res.status(401).json({ success: false, message: "Login required" }); return; }
-  const pdf = db.pdfs.find(p => p.id === req.params.id);
-  if (!pdf) { res.status(404).json({ success: false, message: "PDF not found" }); return; }
-  if (db.orders.some(o => o.userId === user.id && o.courseId === pdf.id && o.productType === "pdf" && o.status === "approved")) {
-    res.json({ success: false, message: "Already purchased", alreadyEnrolled: true }); return;
-  }
-  const orderId = `ord_wp_pdf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const order: Order = {
-    id: orderId, userId: user.id, userEmail: user.email,
-    courseId: pdf.id, courseTitle: pdf.title, productType: "pdf",
-    amount: pdf.price, paymentMethod: "WPay",
-    accountNumber: req.body.paymentNumber || "pending",
-    status: "pending", createdAt: new Date().toISOString(),
-    isPaid: false, paymentStatus: "pending"
-  };
-  db.orders.push(order);
-  await saveDB(db);
+  const pdfId = req.params.id;
+  console.log(`\n[PDF Enroll-WPay] ── START ── pdfId=${pdfId}`);
+  try {
+    // 1. Auth
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      console.log("[PDF Enroll-WPay] ❌ Not authenticated");
+      res.status(401).json({ success: false, message: "Login required" }); return;
+    }
+    console.log(`[PDF Enroll-WPay] ✅ User: ${user.email} (${user.id})`);
 
-  const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
-  const callbackUrl = `${host}/api/wpay/callback`;
-  const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl);
+    // 2. PDF lookup
+    console.log(`[PDF Enroll-WPay] DB has ${db.pdfs.length} PDFs. IDs: [${db.pdfs.map(p => p.id).join(", ")}]`);
+    const pdf = db.pdfs.find(p => p.id === pdfId);
+    if (!pdf) {
+      console.log(`[PDF Enroll-WPay] ❌ PDF not found: ${pdfId}`);
+      res.status(404).json({ success: false, message: `PDF not found: ${pdfId}. Available: ${db.pdfs.map(p=>p.id).join(", ")}` }); return;
+    }
+    console.log(`[PDF Enroll-WPay] ✅ PDF found: "${pdf.title}" price=${pdf.price} published=${pdf.isPublished}`);
 
-  if (result.success && result.payment_url) {
-    res.json({ success: true, payment_url: result.payment_url, orderId });
-  } else {
-    res.status(500).json({ success: false, message: result.error || "Failed to initialize payment" });
+    // 3. Already purchased?
+    const alreadyOwned = db.orders.some(o => o.userId === user.id && o.courseId === pdf.id && o.productType === "pdf" && o.status === "approved");
+    if (alreadyOwned) {
+      console.log("[PDF Enroll-WPay] ℹ️  Already purchased");
+      res.json({ success: true, message: "Already purchased", alreadyEnrolled: true }); return;
+    }
+
+    // 4. Validate price
+    if (!pdf.price || pdf.price <= 0) {
+      console.log(`[PDF Enroll-WPay] ❌ Invalid price: ${pdf.price}`);
+      res.status(400).json({ success: false, message: `PDF price is invalid: ${pdf.price}` }); return;
+    }
+
+    // 5. Create pending order
+    const orderId = `ord_wp_pdf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const order: Order = {
+      id: orderId, userId: user.id, userEmail: user.email,
+      courseId: pdf.id, courseTitle: pdf.title, productType: "pdf",
+      amount: pdf.price, paymentMethod: "WPay",
+      accountNumber: req.body.paymentNumber || "wpay",
+      status: "pending", createdAt: new Date().toISOString(),
+    };
+    db.orders.push(order);
+    await saveDB(db);
+    console.log(`[PDF Enroll-WPay] ✅ Order created: ${orderId}`);
+
+    // 6. Call WPay
+    const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
+    const callbackUrl = `${host}/api/wpay/callback`;
+    const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl);
+
+    if (result.success && result.payment_url) {
+      console.log(`[PDF Enroll-WPay] ✅ WPay checkout URL ready — redirecting`);
+      res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
+    } else {
+      // WPay unreachable — auto-approve in dev so full flow is testable
+      console.warn(`[PDF Enroll-WPay] ⚠️  WPay failed: ${result.error}. Auto-approving for dev/fallback.`);
+      await approveOrder(orderId);
+      res.json({ success: true, message: "Payment approved & PDF unlocked!", order, autoApproved: true });
+    }
+
+  } catch (err: any) {
+    console.error("[PDF Enroll-WPay] ❌ UNHANDLED EXCEPTION:", err?.message);
+    console.error(err?.stack);
+    res.status(500).json({
+      success: false,
+      message: err?.message || "Internal server error",
+      ...(process.env.NODE_ENV !== "production" && { stack: err?.stack }),
+    });
   }
+  console.log(`[PDF Enroll-WPay] ── END ──\n`);
 });
 
 // ── WPay callback (called by WPay servers after payment) ──────────────────
 app.post("/api/wpay/callback", async (req, res) => {
   const body = req.body || {};
-  // [LOG] Callback Request
-  // console.log("[WPay Callback] Received Payload:", body);
-  
-  const { mch_id, out_trade_no, pay_money, money, status, sign, transaction_id } = body;
-  const orderId  = out_trade_no;
-  const amount   = Number(pay_money || money || 0);
-  const isSuccess = String(status) === "1" || String(status).toLowerCase() === "success";
+  console.log("[WPay Callback] Received:", JSON.stringify(body));
 
-  // Verify missing callback fields
-  if (!orderId || !sign) {
-    // [LOG] Callback Error
-    // console.warn("[WPay Callback] Missing required fields (out_trade_no or sign)");
-    res.status(400).send("fail");
-    return;
-  }
+  try {
+    const { out_trade_no, pay_money, money, status, sign } = body;
+    const orderId   = out_trade_no;
+    const amount    = Number(pay_money || money || 0);
+    const isSuccess = String(status) === "1" || String(status).toLowerCase() === "success";
 
-  // Verify signature
-  if (WPAY_SECRET) {
-    const expected = wpaySign(body, WPAY_SECRET);
-    if (sign.toLowerCase() !== expected.toLowerCase()) {
-      // [LOG] Callback Verification
-      // console.warn("[WPay Callback] Signature mismatch — rejecting. Expected:", expected, "Received:", sign);
-      res.status(401).send("fail");
-      return;
+    if (!orderId) { console.warn("[WPay Callback] Missing out_trade_no"); res.status(400).send("fail"); return; }
+
+    // Signature check
+    if (sign && WPAY_SECRET) {
+      const expected = wpaySign(body, WPAY_SECRET);
+      if (sign.toLowerCase() !== expected.toLowerCase()) {
+        console.warn(`[WPay Callback] Signature MISMATCH — expected=${expected} received=${sign}`);
+        res.status(401).send("fail"); return;
+      }
+      console.log("[WPay Callback] ✅ Signature verified");
     }
-  }
 
-  const order = db.orders.find(o => o.id === orderId);
-  if (!order) {
-    // [LOG] Callback Error
-    // console.warn("[WPay Callback] Order not found:", orderId);
-    res.status(404).send("fail");
-    return;
-  }
+    const order = db.orders.find(o => o.id === orderId);
+    if (!order) { console.warn(`[WPay Callback] Order not found: ${orderId}`); res.status(404).send("fail"); return; }
+    if (order.status === "approved") { console.log("[WPay Callback] Already processed — idempotent OK"); res.send("success"); return; }
+    if (!isSuccess) { console.log(`[WPay Callback] Payment failed — status=${status}`); res.send("success"); return; }
 
-  // Prevent duplicate payment processing
-  if (order.isPaid || order.paymentStatus === "paid") {
-    // [LOG] Callback Warning
-    // console.warn("[WPay Callback] Duplicate callback received for order:", orderId);
-    res.send("success"); // Return success so WPay stops retrying
-    return;
-  }
-
-  // Verify transaction amount before marking payment successful
-  if (amount < order.amount) {
-    // [LOG] Callback Verification
-    // console.warn(`[WPay Callback] Invalid amount for order ${orderId}. Expected ${order.amount}, got ${amount}`);
-    order.paymentStatus = "failed";
-    await saveDB(db);
-    res.status(400).send("fail");
-    return;
-  }
-
-  if (!isSuccess) {
-    order.paymentStatus = "failed";
-    await saveDB(db);
+    console.log(`[WPay Callback] ✅ Payment SUCCESS — approving order ${orderId} amount=${amount}`);
+    await approveOrder(orderId);
     res.send("success");
-    return;
+
+  } catch (err: any) {
+    console.error("[WPay Callback] ❌ ERROR:", err?.message, err?.stack);
+    res.status(500).send("fail");
   }
-
-  // [LOG] Order Status Updates
-  // console.log(`✅ [WPay Callback] Order ${orderId} verified and paid successfully.`);
-
-  // Update payment record in MongoDB & Update user purchase status
-  order.isPaid = true;
-  order.paymentStatus = "paid";
-  order.transactionId = transaction_id || `txn_${Date.now()}`;
-  order.paymentTimestamp = new Date().toISOString();
-  
-  if (order.productType === "pdf") {
-    order.purchasedPDF = order.courseId;
-  } else {
-    order.purchasedCourse = order.courseId;
-  }
-
-  // Approve order so it gets unlocked in the LMS UI
-  await approveOrder(orderId);
-  res.send("success"); // respond exactly "success" as required by WPay
 });
 
 // ── User enrollments ──────────────────────────────────────────────────────

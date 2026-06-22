@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Nexus Capital</string>
-    <string name="title_activity_main">Nexus Capital</string>
-    <string name="package_name">com.nexuscapital.app</string>
-    <string name="custom_url_scheme">com.nexuscapital.app</string>
+    <string name="app_name">Tradewithtayyab</string>
+    <string name="title_activity_main">Tradewithtayyab</string>
+    <string name="package_name">com.TradewithTayyab.app</string>
+    <string name="custom_url_scheme">com.TradewithTayyab.app</string>
 </resources>

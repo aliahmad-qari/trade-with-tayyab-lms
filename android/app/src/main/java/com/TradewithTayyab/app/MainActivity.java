@@ -1,4 +1,4 @@
-package com.nexuscapital.app;
+package com.TradewithTayyab.app;
 
 import com.getcapacitor.BridgeActivity;
 
