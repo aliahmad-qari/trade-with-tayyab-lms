@@ -1,5 +1,4 @@
 node_modules/
-build/
 dist/
 coverage/
 .DS_Store
@@ -7,3 +6,13 @@ coverage/
 .env*
 !.env.example
 uploads/
+
+# Android build outputs — exclude compiled classes/resources but NOT the final APK
+android/app/build/intermediates/
+android/app/build/generated/
+android/app/build/tmp/
+android/.gradle/
+android/build/
+# frontend and backend dist
+frontend/dist/
+backend/dist/
