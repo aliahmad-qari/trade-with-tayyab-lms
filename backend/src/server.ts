@@ -76,67 +76,9 @@ interface Database {
 }
 
 // ── Seed Data ─────────────────────────────────────────────────────────────
-const DEFAULT_COURSES: Course[] = [
-  {
-    id: "course-1",
-    title: "Color Trading Masterclass (Big & Small Patterns)",
-    description: "Master Color Trading from the ground up. Learn how to read the Big/Small colour sequence, spot high-probability patterns, follow the running trend, and apply disciplined money management.",
-    category: "Color Trading", instructor: "Tayyab", rating: 4.9, reviewsCount: 312, price: 3999,
-    thumbnailUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80",
-    isPublished: true,
-    lessons: [
-      { id: "1-1", title: "Introduction to Color Trading & Big/Small Basics", duration: "14:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", isPreview: true },
-      { id: "1-2", title: "Big-Small Trend Strategy", duration: "18:45", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", isPreview: false },
-      { id: "1-3", title: "Small + 1 Big Pattern Strategy", duration: "22:15", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", isPreview: false },
-      { id: "1-4", title: "Trend Following Strategy", duration: "16:30", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", isPreview: false },
-      { id: "1-5", title: "Money Management & Trading Discipline", duration: "25:10", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", isPreview: false },
-    ],
-    resources: [
-      { title: "Color Trading Strategy Blueprint PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "1.4 MB" },
-    ],
-  },
-  {
-    id: "course-2",
-    title: "Advanced Color Trading Patterns",
-    description: "Go beyond the basics with advanced Big/Small pattern recognition. Master the 3 Big / 3 Small pattern, the 1 Small 2 Big pattern, and learn exactly when to enter.",
-    category: "Color Trading", instructor: "Tayyab", rating: 4.8, reviewsCount: 184, price: 2999,
-    thumbnailUrl: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=800&q=80",
-    isPublished: true,
-    lessons: [
-      { id: "2-1", title: "Reading the Colour Sequence & Current Trend", duration: "12:10", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", isPreview: true },
-      { id: "2-2", title: "3 Big / 3 Small Pattern", duration: "21:30", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutback.mp4", isPreview: false },
-      { id: "2-3", title: "1 Small 2 Big Pattern Strategy", duration: "19:15", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4", isPreview: false },
-    ],
-    resources: [{ title: "Advanced Pattern Checklist PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "850 KB" }],
-  },
-  {
-    id: "course-3",
-    title: "Color Trading Money Management & Discipline",
-    description: "Win-rate means nothing without discipline. Learn staged capital plans, recovery rules, daily targets and the psychology that keeps Color Trading profitable.",
-    category: "Money Management", instructor: "Tayyab", rating: 4.7, reviewsCount: 95, price: 2499,
-    thumbnailUrl: "https://images.unsplash.com/photo-1579621970795-87facc2f976d?auto=format&fit=crop&w=800&q=80",
-    isPublished: true,
-    lessons: [
-      { id: "3-1", title: "Building a Staged Capital Plan", duration: "15:40", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4", isPreview: true },
-      { id: "3-2", title: "Daily Targets & Stop Rules", duration: "18:20", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4", isPreview: false },
-      { id: "3-3", title: "Trading Psychology & Emotional Control", duration: "20:50", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutback.mp4", isPreview: false },
-    ],
-    resources: [{ title: "Money Management Cheat Sheet PDF", type: "pdf", url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", size: "2.1 MB" }],
-  },
-];
+const DEFAULT_COURSES: Course[] = [];
 
-const DEFAULT_PDFS: PdfProduct[] = [
-  {
-    id: "pdf-colortrading-ebook",
-    title: "Trade With Tayyab — Color Trading eBook Course",
-    description: "The complete Color Trading playbook by Tayyab. Covers every core strategy — Big-Small Trend, Small + 1 Big, Trend Following, 3 Big / 3 Small, and the 1 Small 2 Big pattern.",
-    price: 5000,
-    thumbnailUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80",
-    pdfUrl: "", previewUrl: "", category: "Color Trading",
-    isPublished: true,
-    createdAt: new Date().toISOString(),
-  },
-];
+const DEFAULT_PDFS: PdfProduct[] = [];
 
 const INITIAL_DB: Database = {
   users: [
@@ -177,10 +119,33 @@ async function loadDB(): Promise<void> {
   if (existing?.data) {
     db = existing.data as Database;
     let dirty = false;
-    // Backfill PDFs
-    if (!Array.isArray(db.pdfs)) { db.pdfs = JSON.parse(JSON.stringify(DEFAULT_PDFS)); dirty = true; }
-    // Backfill courses if empty
-    if (!Array.isArray(db.courses) || db.courses.length === 0) { db.courses = JSON.parse(JSON.stringify(DEFAULT_COURSES)); dirty = true; }
+    
+    // Wipe hardcoded demo courses and pdfs
+    const hardcodedCourseIds = ["course-1", "course-2", "course-3"];
+    const hardcodedPdfIds = ["pdf-colortrading-ebook"];
+    
+    const origCoursesLen = db.courses?.length || 0;
+    const origPdfsLen = db.pdfs?.length || 0;
+    
+    if (db.courses) {
+      db.courses = db.courses.filter(c => !hardcodedCourseIds.includes(c.id));
+    } else {
+      db.courses = [];
+    }
+    
+    if (db.pdfs) {
+      db.pdfs = db.pdfs.filter(p => !hardcodedPdfIds.includes(p.id));
+    } else {
+      db.pdfs = [];
+    }
+    
+    if (db.courses.length !== origCoursesLen || db.pdfs.length !== origPdfsLen) {
+      dirty = true;
+      console.log("🧹 Removed hardcoded demo content from database");
+    }
+
+    if (!Array.isArray(db.pdfs)) { db.pdfs = []; dirty = true; }
+    if (!Array.isArray(db.courses)) { db.courses = []; dirty = true; }
     // Re-hash plain-text passwords
     for (const u of db.users) {
       if (u.passwordHash && !u.passwordHash.startsWith("$2")) {

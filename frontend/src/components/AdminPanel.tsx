@@ -85,11 +85,7 @@ export default function AdminPanel({
     pdfUrl?: string;
     pdfTitle?: string;
     order?: number;
-  }[]>([
-    { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Big/Small Color Trading concepts", order: 1 },
-    { title: "Big-Small Trend Strategy", duration: "25:30", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", description: "Learn how to identify and trade the dominant Big/Small trend", order: 2 },
-    { title: "Money Management & Capital Staging", duration: "18:15", isPreview: false, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", description: "Build a staged capital plan and daily stop rules", order: 3 },
-  ]);
+  }[]>([]);
   const [newLessonTitle, setNewLessonTitle] = useState("");
   const [newLessonUrl, setNewLessonUrl] = useState("");
   const [isSubmittingCourse, setIsSubmittingCourse] = useState(false);
@@ -102,6 +98,7 @@ export default function AdminPanel({
   const [draftLessonOrder, setDraftLessonOrder] = useState("");
   const [videoSourceType, setVideoSourceType] = useState<"upload" | "url">("upload");
   const [pdfSourceType, setPdfSourceType] = useState<"upload" | "url">("upload");
+  const [newThumbSource, setNewThumbSource] = useState<"upload" | "url">("upload");
   const [draftPdfTitle, setDraftPdfTitle] = useState("");
   const [draftPdfUrl, setDraftPdfUrl] = useState("");
   
@@ -151,6 +148,7 @@ export default function AdminPanel({
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
   const [pdfFileSource, setPdfFileSource] = useState<"upload" | "url">("upload");
   const [pdfPreviewSource, setPdfPreviewSource] = useState<"upload" | "url">("upload");
+  const [pdfThumbSource, setPdfThumbSource] = useState<"upload" | "url">("upload");
   const [editingPdfId, setEditingPdfId] = useState<string | null>(null);
   const [isSubmittingPdf, setIsSubmittingPdf] = useState(false);
   const [pdfSearch, setPdfSearch] = useState("");
@@ -277,7 +275,7 @@ export default function AdminPanel({
       description: draftLessonDesc || "Specialized concept lesson chapter",
       duration: "15:00", 
       isPreview: newLessonIsPreview, 
-      videoUrl: newLessonUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      videoUrl: newLessonUrl || "",
       pdfUrl: draftPdfUrl || "",
       pdfTitle: draftPdfTitle || (draftPdfUrl ? "SMC Notes & Trading Cheat Sheet" : ""),
       order: orderNum
@@ -343,9 +341,7 @@ export default function AdminPanel({
         setNewDesc("");
         setNewThumb("");
         setNewPrice("");
-        setNewLessons([
-          { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
-        ]);
+        setNewLessons([]);
         setCourseResources([]);
         setEditingCourseId(null);
         fetchCourses();
@@ -496,9 +492,7 @@ export default function AdminPanel({
                     setNewDesc("");
                     setNewThumb("");
                     setNewPrice("");
-                    setNewLessons([
-                      { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
-                    ]);
+                    setNewLessons([]);
                     setCourseResources([]);
                   }
                   if (item.id === "add_pdf") {
@@ -843,9 +837,7 @@ export default function AdminPanel({
                       setNewDesc("");
                       setNewThumb("");
                       setNewPrice("");
-                      setNewLessons([
-                        { title: "Introduction to Color Trading (Free Preview)", duration: "12:45", isPreview: true, videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", description: "Introduction to Color Trading Big/Small patterns", order: 1 }
-                      ]);
+                      setNewLessons([]);
                       setCourseResources([]);
                       addToast("Editing reset. Form ready for new course creation", "info");
                     }}
@@ -914,16 +906,42 @@ export default function AdminPanel({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Course Thumbnail Link</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Image URL"
-                      value={newThumb}
-                      onChange={(e) => setNewThumb(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
-                    />
+                  <div className="space-y-1.5 bg-black/20 p-2 rounded border border-white/5">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Course Thumbnail</label>
+                      <div className="flex gap-1">
+                        <button type="button" onClick={() => setNewThumbSource("upload")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${newThumbSource === "upload" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Upload</button>
+                        <button type="button" onClick={() => setNewThumbSource("url")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${newThumbSource === "url" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Paste Link</button>
+                      </div>
+                    </div>
+                    {newThumbSource === "upload" ? (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const url = await uploadFile(file);
+                              setNewThumb(url);
+                              addToast(`Successfully uploaded Course Thumbnail!`, "success");
+                            } catch (err) {
+                              addToast("Thumbnail upload failed.", "error");
+                            }
+                          }
+                        }}
+                        className="w-full bg-black/45 border border-white/5 text-xs text-gray-400 px-3 py-1.5 rounded cursor-pointer"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        required={newThumbSource === "url"}
+                        placeholder="Image URL"
+                        value={newThumb}
+                        onChange={(e) => setNewThumb(e.target.value)}
+                        className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -1517,15 +1535,41 @@ export default function AdminPanel({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">Thumbnail Link</label>
-                    <input
-                      type="text"
-                      placeholder="Image URL"
-                      value={pdfThumb}
-                      onChange={(e) => setPdfThumb(e.target.value)}
-                      className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
-                    />
+                  <div className="space-y-1.5 bg-black/20 p-2 rounded border border-white/5">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] uppercase font-bold text-gray-400 font-mono">PDF Thumbnail</label>
+                      <div className="flex gap-1">
+                        <button type="button" onClick={() => setPdfThumbSource("upload")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfThumbSource === "upload" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Upload</button>
+                        <button type="button" onClick={() => setPdfThumbSource("url")} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase transition ${pdfThumbSource === "url" ? "bg-brand-purple text-white shadow" : "bg-white/5 text-gray-405"}`}>Paste Link</button>
+                      </div>
+                    </div>
+                    {pdfThumbSource === "upload" ? (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              const url = await uploadFile(file);
+                              setPdfThumb(url);
+                              addToast(`Successfully uploaded PDF Thumbnail!`, "success");
+                            } catch (err) {
+                              addToast("Thumbnail upload failed.", "error");
+                            }
+                          }
+                        }}
+                        className="w-full bg-black/45 border border-white/5 text-xs text-gray-400 px-3 py-1.5 rounded cursor-pointer"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Image URL"
+                        value={pdfThumb}
+                        onChange={(e) => setPdfThumb(e.target.value)}
+                        className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                      />
+                    )}
                   </div>
                 </div>
 
