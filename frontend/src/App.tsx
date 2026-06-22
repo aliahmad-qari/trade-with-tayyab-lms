@@ -707,8 +707,8 @@ export default function App() {
                         How It Works
                       </button>
                       <a
-                        href="/downloads/trade-with-tayyab.apk"
-                        download="TradeWithTayyab.apk"
+                        href="/downloads/trade-with-tayyab-v1.1.apk"
+                        download="trade-with-tayyab-v1.1.apk"
                         title="Download Trade With Tayyab Android App"
                         className="apk-btn group px-6 py-3.5 rounded-xl font-bold text-sm border border-brand-purple/50 bg-gradient-to-br from-brand-purple/20 via-brand-violet/10 to-transparent text-white transition-all duration-300 cursor-pointer flex items-center gap-2.5 select-none no-underline"
                       >
