@@ -18,7 +18,7 @@ import {
   Award, TrendingUp, Coins, LineChart, Compass, HelpCircle, 
   CheckCircle, BookOpenText, Globe, CreditCard, 
   Plus, Trash, Shield, ChevronRight, Check,
-  AlertCircle, Sparkles, BookOpen, Play, UserCheck, Info, Landmark, Star, AlertTriangle, Lock
+  AlertCircle, Sparkles, BookOpen, Play, UserCheck, Info, Landmark, Star, AlertTriangle, Lock, Smartphone
 } from "lucide-react";
 
 // Notification Type
@@ -653,6 +653,18 @@ export default function App() {
                       >
                         How It Works
                       </button>
+                      <a
+                        href="/downloads/trade-with-tayyab.apk"
+                        download="TradeWithTayyab.apk"
+                        title="Download Trade With Tayyab Android App"
+                        className="apk-btn group px-6 py-3.5 rounded-xl font-bold text-sm border border-brand-purple/50 bg-gradient-to-br from-brand-purple/20 via-brand-violet/10 to-transparent text-white transition-all duration-300 cursor-pointer flex items-center gap-2.5 select-none no-underline"
+                      >
+                        <Smartphone className="apk-icon w-4 h-4 text-brand-violet shrink-0 transition-all duration-200" />
+                        <span className="flex flex-col items-start leading-none">
+                          <span className="text-[9px] font-semibold uppercase tracking-widest text-brand-violet/80 font-mono">Android App</span>
+                          <span className="text-white text-sm font-extrabold tracking-wide">Download APK</span>
+                        </span>
+                      </a>
                     </div>
 
                     {/* Stat panel summary cards */}

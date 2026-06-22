@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.nexuscapital.app',
-  appName: 'Nexus Capital',
+  appId: 'com.tradewithTayyab.app',
+  appName: 'Trade With Tayyab',
   webDir: 'dist',                   // Vite's output folder
 
   server: {
