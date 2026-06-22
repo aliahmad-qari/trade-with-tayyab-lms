@@ -32,7 +32,13 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
       # WPay payment gateway — server-side only, never sent to frontend.
-      - key: WPAY_MERCHANT_ID
+      # Set the secret and the REAL Payin URL (from mch.wpay.one) in the
+      # Render dashboard. WPAY_PAYIN_URL must be the exact endpoint — the old
+      # /v1/Payin returns 404. Optional WPAY_FIELD_* / WPAY_CB_* overrides let
+      # you match the dashboard request/callback shape without a code change.
+      - key: WPAY_MCH_ID
+        value: "2794"
+      - key: WPAY_SECRET_KEY
         sync: false
-      - key: WPAY_SIGNATURE_SALT
+      - key: WPAY_PAYIN_URL
         sync: false

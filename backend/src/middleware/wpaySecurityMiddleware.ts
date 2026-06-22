@@ -106,7 +106,7 @@ export const verifyWPayCallbackSignature = (
   res: Response,
   next: NextFunction
 ): void => {
-  const secretKey = process.env.WPAY_SIGNATURE_SALT;
+  const secretKey = process.env.WPAY_SECRET_KEY || process.env.WPAY_SIGNATURE_SALT || process.env.WPAY_SECRET;
 
   if (!secretKey) {
     console.error(

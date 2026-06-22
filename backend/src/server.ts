@@ -21,11 +21,58 @@ const __dirname  = path.dirname(__filename);
 const PORT            = Number(process.env.PORT) || 3000;
 const JWT_SECRET      = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
 const BCRYPT_ROUNDS   = 10;
-const WPAY_MERCHANT_ID    = process.env.WPAY_MERCHANT_ID    || "2794";
-const WPAY_USERNAME       = process.env.WPAY_USERNAME       || "patlo222";
-const WPAY_SECRET         = process.env.WPAY_SECRET         || "eb6080dbc8dc429ab86a1cd1c337975d";
-const WPAY_SIGNATURE_SALT = process.env.WPAY_SIGNATURE_SALT || WPAY_SECRET;
-const WPAY_API_BASE       = "https://api.wpay.one";
+// ── WPay credentials ────────────────────────────────────────────────────────
+// Primary env var names match the live merchant credentials:
+//   WPAY_MCH_ID, WPAY_SECRET_KEY
+// Legacy names (WPAY_MERCHANT_ID / WPAY_SECRET / WPAY_SIGNATURE_SALT) are still
+// accepted so existing Render config keeps working. NO secret is hard-coded —
+// if WPAY_SECRET_KEY is unset the integration refuses to run (fail closed).
+const WPAY_MCH_ID =
+  process.env.WPAY_MCH_ID || process.env.WPAY_MERCHANT_ID || "2794";
+const WPAY_SECRET_KEY =
+  process.env.WPAY_SECRET_KEY ||
+  process.env.WPAY_SECRET ||
+  process.env.WPAY_SIGNATURE_SALT ||
+  "";
+
+// ── WPay endpoint ───────────────────────────────────────────────────────────
+// The exact Payin URL comes from the WPay merchant dashboard (mch.wpay.one).
+// It is NOT publicly documented. Set WPAY_PAYIN_URL to the full URL, e.g.
+//   WPAY_PAYIN_URL=https://api.wpay.one/api/<Controller>/<Action>
+// (or set WPAY_API_BASE + WPAY_PAYIN_PATH). If neither is set, payment
+// initiation returns a clear 503 instead of calling a known-404 placeholder.
+const WPAY_API_BASE   = process.env.WPAY_API_BASE   || "https://api.wpay.one";
+const WPAY_PAYIN_URL  = process.env.WPAY_PAYIN_URL  || "";
+const WPAY_PAYIN_PATH = process.env.WPAY_PAYIN_PATH || "";
+// Resolved request URL: explicit full URL wins, else base+path, else "".
+const WPAY_REQUEST_URL =
+  WPAY_PAYIN_URL || (WPAY_PAYIN_PATH ? `${WPAY_API_BASE}${WPAY_PAYIN_PATH}` : "");
+
+// ── WPay request shape (env-configurable to match the dashboard spec) ────────
+// Field NAMES differ between gateways (mch_id vs mchId, out_trade_no vs
+// mch_order_no). Override via env without touching code.
+const WPAY_F_MCH      = process.env.WPAY_FIELD_MCH      || "mch_id";
+const WPAY_F_ORDER    = process.env.WPAY_FIELD_ORDER    || "out_trade_no";
+const WPAY_F_AMOUNT   = process.env.WPAY_FIELD_AMOUNT   || "money";
+const WPAY_F_NOTIFY   = process.env.WPAY_FIELD_NOTIFY   || "notify_url";
+const WPAY_F_PAYTYPE  = process.env.WPAY_FIELD_PAYTYPE  || "pay_type";
+const WPAY_F_GOODS    = process.env.WPAY_FIELD_GOODS    || "goods_name";
+const WPAY_F_CURRENCY = process.env.WPAY_FIELD_CURRENCY || "currency";
+const WPAY_PAY_TYPE   = process.env.WPAY_PAY_TYPE       || "8001";
+const WPAY_CURRENCY   = process.env.WPAY_CURRENCY       || "PKR";
+const WPAY_GOODS_NAME = process.env.WPAY_GOODS_NAME     || "Trade With Tayyab";
+// Some gateways expect the amount in minor units (paisa/cents). Toggle on if so.
+const WPAY_AMOUNT_IN_CENTS = process.env.WPAY_AMOUNT_IN_CENTS === "true";
+// Optional browser return URL (where WPay sends the user after paying).
+const WPAY_RETURN_URL = process.env.WPAY_RETURN_URL || "";
+const WPAY_F_RETURN   = process.env.WPAY_FIELD_RETURN || "return_url";
+
+// ── WPay callback shape (env-configurable) ───────────────────────────────────
+const WPAY_CB_ORDER   = process.env.WPAY_CB_FIELD_ORDER  || "out_trade_no";
+const WPAY_CB_AMOUNT  = process.env.WPAY_CB_FIELD_AMOUNT || "pay_money";
+const WPAY_CB_STATUS  = process.env.WPAY_CB_FIELD_STATUS || "status";
+const WPAY_CB_TXN     = process.env.WPAY_CB_FIELD_TXN    || "transaction_id";
+const WPAY_CB_SUCCESS = process.env.WPAY_CB_SUCCESS_VALUE || "1";
 
 // ── Cloudinary ────────────────────────────────────────────────────────────
 cloudinary.config({
@@ -348,51 +395,83 @@ app.get("/api/pdfs/:id/secure-access", (req, res) => {
 });
 
 // ── WPay helper: create order on gateway and return checkout URL ──────────
-async function wpayInitiatePayin(orderId: string, amount: number, callbackUrl: string): Promise<{ success: boolean; payment_url?: string; error?: string }> {
-  console.log(`[WPay] wpayInitiatePayin called — orderId=${orderId} amount=${amount}`);
-  console.log(`[WPay] Config — MERCHANT_ID="${WPAY_MERCHANT_ID}" SECRET="${WPAY_SECRET ? "SET(" + WPAY_SECRET.length + " chars)" : "MISSING!"}"`);
-  console.log(`[WPay] Callback URL: ${callbackUrl}`);
+// `configured` distinguishes "gateway not set up yet" (503, do NOT unlock)
+// from "gateway rejected this order" (502). Neither ever auto-approves.
+async function wpayInitiatePayin(
+  orderId: string,
+  amount: number,
+  callbackUrl: string,
+): Promise<{ success: boolean; payment_url?: string; error?: string; configured: boolean }> {
+  console.log(`\n[WPay] ── initiatePayin ── orderId=${orderId} amount=${amount}`);
+  console.log(`[WPay] mch_id="${WPAY_MCH_ID}" secret=${WPAY_SECRET_KEY ? "SET(" + WPAY_SECRET_KEY.length + " chars)" : "MISSING!"} url="${WPAY_REQUEST_URL || "(unset)"}"`);
+  console.log(`[WPay] callback(notify_url)=${callbackUrl}`);
+
+  // Fail closed on missing configuration — never invent an endpoint/secret.
+  if (!WPAY_SECRET_KEY) {
+    const error = "WPAY_SECRET_KEY is not set in environment — cannot sign request.";
+    console.error(`[WPay] ❌ ${error}`);
+    return { success: false, error, configured: false };
+  }
+  if (!WPAY_REQUEST_URL) {
+    const error = "WPAY_PAYIN_URL is not set — get the exact Payin endpoint from the WPay merchant dashboard and set it in env.";
+    console.error(`[WPay] ❌ ${error}`);
+    return { success: false, error, configured: false };
+  }
 
   try {
-    if (!WPAY_MERCHANT_ID) throw new Error("WPAY_MERCHANT_ID is not set in environment");
-    if (!WPAY_SECRET)      throw new Error("WPAY_SECRET / WPAY_SIGNATURE_SALT is not set in environment");
-
+    // Build params using env-configurable field names so the request shape can
+    // be matched to the dashboard spec without a code change.
+    const amountValue = WPAY_AMOUNT_IN_CENTS ? Math.round(amount * 100) : amount;
     const params: Record<string, string | number> = {
-      mch_id:        WPAY_MERCHANT_ID,
-      out_trade_no:  orderId,
-      money:         amount,
-      currency:      "PKR",
-      pay_type:      "8001",
-      notify_url:    callbackUrl,
-      goods_name:    "Trade With Tayyab",
+      [WPAY_F_MCH]:      WPAY_MCH_ID,
+      [WPAY_F_ORDER]:    orderId,
+      [WPAY_F_AMOUNT]:   amountValue,
+      [WPAY_F_CURRENCY]: WPAY_CURRENCY,
+      [WPAY_F_PAYTYPE]:  WPAY_PAY_TYPE,
+      [WPAY_F_NOTIFY]:   callbackUrl,
+      [WPAY_F_GOODS]:    WPAY_GOODS_NAME,
     };
+    if (WPAY_RETURN_URL) params[WPAY_F_RETURN] = WPAY_RETURN_URL;
 
-    params.sign = wpaySign(params, WPAY_SECRET);
-    console.log("[WPay] Signed params:", JSON.stringify(params));
+    const sign = wpaySign(params, WPAY_SECRET_KEY);
+    params.sign = sign;
 
-    const resp = await axios.post(`${WPAY_API_BASE}/v1/Payin`, params, {
+    // ── Detailed request logging (requirement #11) ─────────────────────────
+    console.log("[WPay] Request URL :", WPAY_REQUEST_URL);
+    console.log("[WPay] Request body:", JSON.stringify(params));
+    console.log("[WPay] Signature   :", sign);
+
+    const resp = await axios.post(WPAY_REQUEST_URL, params, {
       timeout: 12000,
       headers: { "Content-Type": "application/json" },
+      validateStatus: () => true, // inspect non-2xx bodies instead of throwing
     });
 
-    console.log(`[WPay] API response status=${resp.status}:`, JSON.stringify(resp.data));
+    console.log(`[WPay] Response status=${resp.status} body=`, JSON.stringify(resp.data).slice(0, 1000));
+
+    if (resp.status >= 400) {
+      return { success: false, error: `Gateway HTTP ${resp.status}`, configured: true };
+    }
 
     const data = resp.data;
-    const url  = data?.payUrl || data?.pay_url || data?.checkoutUrl || data?.payment_url || data?.url;
+    const url =
+      data?.payUrl || data?.pay_url || data?.checkoutUrl ||
+      data?.payment_url || data?.url || data?.data?.payUrl || data?.data?.url;
     if (url) {
-      console.log(`[WPay] ✅ Checkout URL obtained: ${url}`);
-      return { success: true, payment_url: url };
+      console.log(`[WPay] ✅ Checkout URL: ${url}`);
+      return { success: true, payment_url: url, configured: true };
     }
     const errMsg = data?.msg || data?.message || data?.error || JSON.stringify(data);
     console.warn(`[WPay] ⚠️  No checkout URL in response. msg: ${errMsg}`);
-    return { success: false, error: errMsg };
+    return { success: false, error: errMsg, configured: true };
 
   } catch (e: any) {
     const axiosData = e?.response?.data;
-    const errMsg    = axiosData?.msg || axiosData?.message || e?.message || "WPay API unreachable";
-    console.error(`[WPay] ❌ wpayInitiatePayin FAILED: ${errMsg}`);
-    if (axiosData) console.error("[WPay] Response body:", JSON.stringify(axiosData));
-    return { success: false, error: errMsg };
+    console.error("[WPay] Gateway error status:", e?.response?.status);
+    console.error("[WPay] Gateway error body  :", JSON.stringify(axiosData));
+    const errMsg = axiosData?.msg || axiosData?.message || e?.message || "WPay API unreachable";
+    console.error(`[WPay] ❌ initiatePayin FAILED: ${errMsg}`);
+    return { success: false, error: errMsg, configured: true };
   }
 }
 
@@ -439,16 +518,18 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
     await saveDB(db);
     console.log(`[Course Enroll-WPay] ✅ Order created: ${orderId}`);
 
-    const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
+    const host = (process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const callbackUrl = `${host}/api/wpay/callback`;
     const result = await wpayInitiatePayin(orderId, course.price, callbackUrl);
 
     if (result.success && result.payment_url) {
       res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
     } else {
-      console.warn(`[Course Enroll-WPay] ⚠️  WPay failed: ${result.error}. Auto-approving for dev/fallback.`);
-      await approveOrder(orderId);
-      res.json({ success: true, message: "Payment approved & course unlocked!", order, autoApproved: true });
+      // Do NOT auto-approve — the order stays "pending" until WPay's callback
+      // confirms a real payment. 503 = gateway not configured, 502 = rejected.
+      const code = result.configured ? 502 : 503;
+      console.error(`[Course Enroll-WPay] ❌ WPay init failed (${code}): ${result.error}`);
+      res.status(code).json({ success: false, orderId, message: result.error || "Payment gateway error. Please try again." });
     }
   } catch (err: any) {
     console.error("[Course Enroll-WPay] ❌ UNHANDLED EXCEPTION:", err?.message, err?.stack);
@@ -510,7 +591,7 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
     console.log(`[PDF Enroll-WPay] ✅ Order created: ${orderId}`);
 
     // 6. Call WPay
-    const host = process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`;
+    const host = (process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const callbackUrl = `${host}/api/wpay/callback`;
     const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl);
 
@@ -518,10 +599,11 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
       console.log(`[PDF Enroll-WPay] ✅ WPay checkout URL ready — redirecting`);
       res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
     } else {
-      // WPay unreachable — auto-approve in dev so full flow is testable
-      console.warn(`[PDF Enroll-WPay] ⚠️  WPay failed: ${result.error}. Auto-approving for dev/fallback.`);
-      await approveOrder(orderId);
-      res.json({ success: true, message: "Payment approved & PDF unlocked!", order, autoApproved: true });
+      // Do NOT auto-approve — order stays "pending" until WPay's callback
+      // confirms a real payment. 503 = gateway not configured, 502 = rejected.
+      const code = result.configured ? 502 : 503;
+      console.error(`[PDF Enroll-WPay] ❌ WPay init failed (${code}): ${result.error}`);
+      res.status(code).json({ success: false, orderId, message: result.error || "Payment gateway error. Please try again." });
     }
 
   } catch (err: any) {
@@ -537,35 +619,65 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
 });
 
 // ── WPay callback (called by WPay servers after payment) ──────────────────
+// Production rules:
+//   • Verify MD5 signature       • Verify amount via pay_money
+//   • Verify order number exists  • Mark order paid + unlock access
+//   • Save transaction ID         • Respond exactly "success"
 app.post("/api/wpay/callback", async (req, res) => {
-  const body = req.body || {};
-  console.log("[WPay Callback] Received:", JSON.stringify(body));
+  const body: Record<string, any> = req.body || {};
+  console.log("[WPay Callback] ── Received ──", JSON.stringify(body));
 
   try {
-    const { out_trade_no, pay_money, money, status, sign } = body;
-    const orderId   = out_trade_no;
-    const amount    = Number(pay_money || money || 0);
-    const isSuccess = String(status) === "1" || String(status).toLowerCase() === "success";
+    const orderId   = String(body[WPAY_CB_ORDER] || body.out_trade_no || body.mch_order_no || "");
+    const sign      = body.sign;
+    const paidAmount = Number(body[WPAY_CB_AMOUNT] ?? body.pay_money ?? body.money ?? 0);
+    const txnId     = String(body[WPAY_CB_TXN] || body.transaction_id || body.trade_no || `txn_${Date.now()}`);
+    const statusVal = String(body[WPAY_CB_STATUS] ?? body.status ?? "");
+    const isSuccess = statusVal === String(WPAY_CB_SUCCESS) || statusVal.toLowerCase() === "success";
 
-    if (!orderId) { console.warn("[WPay Callback] Missing out_trade_no"); res.status(400).send("fail"); return; }
+    // 1. Order number present
+    if (!orderId) { console.warn("[WPay Callback] ❌ Missing order number"); res.status(400).send("fail"); return; }
 
-    // Signature check
-    if (sign && WPAY_SECRET) {
-      const expected = wpaySign(body, WPAY_SECRET);
-      if (sign.toLowerCase() !== expected.toLowerCase()) {
-        console.warn(`[WPay Callback] Signature MISMATCH — expected=${expected} received=${sign}`);
-        res.status(401).send("fail"); return;
-      }
-      console.log("[WPay Callback] ✅ Signature verified");
+    // 2. Signature verification (fail closed if no secret configured)
+    if (!WPAY_SECRET_KEY) { console.error("[WPay Callback] ❌ WPAY_SECRET_KEY not set"); res.status(500).send("fail"); return; }
+    if (!sign) { console.warn("[WPay Callback] ❌ Missing sign"); res.status(400).send("fail"); return; }
+    const expected = wpaySign(body, WPAY_SECRET_KEY);
+    const sigOk = String(sign).toLowerCase() === expected.toLowerCase();
+    console.log(`[WPay Callback] Signature ${sigOk ? "✅ OK" : "❌ MISMATCH"} — expected=${expected} received=${sign}`);
+    if (!sigOk) { res.status(401).send("fail"); return; }
+
+    // 3. Order lookup
+    const order = db.orders.find(o => o.id === orderId);
+    if (!order) { console.warn(`[WPay Callback] ❌ Order not found: ${orderId}`); res.status(404).send("fail"); return; }
+
+    // 4. Idempotency — already approved
+    if (order.status === "approved" || order.paymentStatus === "paid") {
+      console.log("[WPay Callback] ℹ️  Already processed — idempotent OK");
+      res.send("success"); return;
     }
 
-    const order = db.orders.find(o => o.id === orderId);
-    if (!order) { console.warn(`[WPay Callback] Order not found: ${orderId}`); res.status(404).send("fail"); return; }
-    if (order.status === "approved") { console.log("[WPay Callback] Already processed — idempotent OK"); res.send("success"); return; }
-    if (!isSuccess) { console.log(`[WPay Callback] Payment failed — status=${status}`); res.send("success"); return; }
+    // 5. Payment status
+    if (!isSuccess) {
+      console.log(`[WPay Callback] Payment not successful — status=${statusVal}. Marking failed.`);
+      order.paymentStatus = "failed";
+      await saveDB(db);
+      res.send("success"); return; // ack so WPay stops retrying a known-failed txn
+    }
 
-    console.log(`[WPay Callback] ✅ Payment SUCCESS — approving order ${orderId} amount=${amount}`);
-    await approveOrder(orderId);
+    // 6. Amount verification — guard against tampered/short payments.
+    const expectedAmount = WPAY_AMOUNT_IN_CENTS ? Math.round(order.amount * 100) : order.amount;
+    if (Math.round(paidAmount) < Math.round(expectedAmount)) {
+      console.warn(`[WPay Callback] ❌ Amount mismatch — paid=${paidAmount} expected=${expectedAmount} order=${orderId}`);
+      res.status(400).send("fail"); return;
+    }
+
+    // 7. Approve + record transaction
+    order.isPaid = true;
+    order.paymentStatus = "paid";
+    order.transactionId = txnId;
+    order.paymentTimestamp = new Date().toISOString();
+    await approveOrder(orderId); // sets status="approved", grants access, saves
+    console.log(`[WPay Callback] ✅ Order ${orderId} PAID (txn=${txnId}, amount=${paidAmount}) — access granted`);
     res.send("success");
 
   } catch (err: any) {
@@ -840,7 +952,8 @@ async function startServer() {
     console.log(`   /api/courses  ✓`);
     console.log(`   /api/pdfs     ✓`);
     console.log(`   /api/auth/*   ✓`);
-    console.log(`   WPay gateway  ✓  (merchant: ${WPAY_MERCHANT_ID})\n`);
+    const wpayReady = !!WPAY_SECRET_KEY && !!WPAY_REQUEST_URL;
+    console.log(`   WPay gateway  ${wpayReady ? "✓" : "⚠"}  mch=${WPAY_MCH_ID} secret=${WPAY_SECRET_KEY ? "set" : "MISSING"} url=${WPAY_REQUEST_URL || "UNSET (set WPAY_PAYIN_URL)"}\n`);
   });
 }
 

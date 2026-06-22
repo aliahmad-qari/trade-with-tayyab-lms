@@ -34,14 +34,14 @@ import { generateWPaySignature, verifyWPaySignature } from "../utils/wpaySignatu
  * Set WPAY_MERCHANT_ID in your .env / Render dashboard.
  * The fallback value matches the confirmed merchant account.
  */
-const WPAY_MERCHANT_ID = process.env.WPAY_MERCHANT_ID || "2794";
+const WPAY_MERCHANT_ID = process.env.WPAY_MCH_ID || process.env.WPAY_MERCHANT_ID || "2794";
 
 /**
  * WPay Secret Key used for MD5 signature generation & verification.
  * CRITICAL: Keep this in process.env — never commit the value to Git.
  * env var name: WPAY_SIGNATURE_SALT  (matches the middleware expectation)
  */
-const WPAY_SECRET = process.env.WPAY_SIGNATURE_SALT || process.env.WPAY_SECRET || "";
+const WPAY_SECRET = process.env.WPAY_SECRET_KEY || process.env.WPAY_SIGNATURE_SALT || process.env.WPAY_SECRET || "";
 
 /** WPay REST gateway base URL. */
 const WPAY_API_BASE = "https://api.wpay.one";
