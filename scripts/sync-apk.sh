@@ -38,13 +38,14 @@ VERSION_CODE=$(grep -oP 'versionCode\s+\K\d+' android/app/build.gradle | head -1
 VERSION_NAME=$(grep -oP 'versionName\s+"\K[^"]+' android/app/build.gradle | head -1)
 UPDATED_AT=$(date +%Y-%m-%d)
 FILE_SIZE=$(du -sh "$APK_DST" | cut -f1)
+FILE_NAME=$(basename "$APK_DST")
 
 cat > "$VERSION_JSON" <<EOF
 {
   "versionCode": $VERSION_CODE,
   "versionName": "$VERSION_NAME",
   "appId": "com.TradewithTayyab.app",
-  "fileName": "trade-with-tayyab.apk",
+  "fileName": "$FILE_NAME",
   "fileSize": "$FILE_SIZE",
   "updatedAt": "$UPDATED_AT"
 }

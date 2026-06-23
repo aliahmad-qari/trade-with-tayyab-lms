@@ -61,7 +61,7 @@ $versionData = @{
   versionCode = [int]$versionCode
   versionName = $versionName
   appId       = "com.TradewithTayyab.app"
-  fileName    = "trade-with-tayyab.apk"
+  fileName    = (Split-Path $ApkDest -Leaf)
   fileSize    = $fileSize
   updatedAt   = $updatedAt
 } | ConvertTo-Json -Depth 2
