@@ -402,7 +402,7 @@ async function wpayInitiatePayin(
   orderId: string,
   amount: number,
   callbackUrl: string,
-): Promise<{ success: boolean; payment_url?: string; error?: string; configured: boolean }> {
+): Promise<{ success: boolean; payment_url?: string; transaction_id?: string; error?: string; configured: boolean }> {
   console.log(`\n[WPay] ── initiatePayin ── orderId=${orderId} amount=${amount}`);
   console.log(`[WPay] mch_id="${WPAY_MCH_ID}" secret=${WPAY_SECRET_KEY ? "SET(" + WPAY_SECRET_KEY.length + " chars)" : "MISSING!"} url="${WPAY_REQUEST_URL || "(unset)"}"`);
   console.log(`[WPay] callback(notify_url)=${callbackUrl}`);
@@ -479,9 +479,16 @@ async function wpayInitiatePayin(
       data?.data?.url || data?.data?.payUrl ||
       data?.payUrl || data?.pay_url || data?.checkoutUrl ||
       data?.payment_url || data?.url;
+    // WPay returns its gateway transaction id at initiation (the callback omits
+    // it), so capture it here for storage on the order — needed for refunds and
+    // reconciliation against the WPay dashboard.
+    const transaction_id =
+      data?.data?.transaction_Id || data?.data?.transaction_id ||
+      data?.transaction_Id || data?.transaction_id || undefined;
     if (url) {
       console.log(`[WPay] ✅ Checkout URL: ${url}`);
-      return { success: true, payment_url: url, configured: true };
+      if (transaction_id) console.log(`[WPay] ✅ Transaction ID: ${transaction_id}`);
+      return { success: true, payment_url: url, transaction_id, configured: true };
     }
     const errMsg = data?.msg || data?.message || data?.error || JSON.stringify(data);
     console.warn(`[WPay] ⚠️  No checkout URL in response. msg: ${errMsg}`);
@@ -545,6 +552,8 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
     const result = await wpayInitiatePayin(orderId, course.price, callbackUrl);
 
     if (result.success && result.payment_url) {
+      // Persist WPay's real gateway transaction id (callback omits it).
+      if (result.transaction_id) { order.transactionId = result.transaction_id; await saveDB(db); }
       res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
     } else {
       // Do NOT auto-approve — the order stays "pending" until WPay's callback
@@ -618,6 +627,8 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
     const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl);
 
     if (result.success && result.payment_url) {
+      // Persist WPay's real gateway transaction id (callback omits it).
+      if (result.transaction_id) { order.transactionId = result.transaction_id; await saveDB(db); }
       console.log(`[PDF Enroll-WPay] ✅ WPay checkout URL ready — redirecting`);
       res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
     } else {
@@ -658,7 +669,8 @@ app.post("/api/wpay/callback", async (req, res) => {
     const orderId   = String(body[WPAY_CB_ORDER] || body.out_trade_no || body.mch_order_no || "");
     const sign      = body.sign;
     const paidAmount = Number(body[WPAY_CB_AMOUNT] ?? body.pay_money ?? body.money ?? 0);
-    const txnId     = String(body[WPAY_CB_TXN] || body.transaction_id || body.trade_no || `txn_${Date.now()}`);
+    // Gateway txn id IF the callback carries one (current WPay sandbox omits it).
+    const cbTxnId   = String(body[WPAY_CB_TXN] || body.transaction_Id || body.transaction_id || body.trade_no || "");
     const statusVal = String(body[WPAY_CB_STATUS] ?? body.status ?? "");
     const isSuccess = statusVal === String(WPAY_CB_SUCCESS) || statusVal.toLowerCase() === "success";
 
@@ -698,13 +710,19 @@ app.post("/api/wpay/callback", async (req, res) => {
       res.status(400).send("fail"); return;
     }
 
-    // 7. Approve + record transaction
+    // 7. Approve + record transaction.
+    // Prefer the real gateway id, in priority order:
+    //   1. id carried on this callback (future-proof if WPay starts sending one)
+    //   2. id we captured & stored at initiation (current sandbox path)
+    //   3. synthetic last-resort so the field is never empty
+    const txnId = cbTxnId || order.transactionId || `txn_${Date.now()}`;
+    const txnSource = cbTxnId ? "from-callback" : order.transactionId ? "from-initiation" : "synthetic";
     order.isPaid = true;
     order.paymentStatus = "paid";
     order.transactionId = txnId;
     order.paymentTimestamp = new Date().toISOString();
     await approveOrder(orderId); // sets status="approved", grants access, saves
-    console.log(`[WPay Callback] ✅ Order ${orderId} PAID (txn=${txnId}, amount=${paidAmount}) — access granted`);
+    console.log(`[WPay Callback] ✅ Order ${orderId} PAID (txn=${txnId} ${txnSource}, amount=${paidAmount}) — access granted`);
     res.send("success");
 
   } catch (err: any) {
