@@ -214,6 +214,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // WPay posts callbacks as x-www-form-urlencoded
 
 // Client-info middleware
 app.use((req, _res, next) => {
