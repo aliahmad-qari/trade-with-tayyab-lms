@@ -647,7 +647,12 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
 //   • Save transaction ID         • Respond exactly "success"
 app.post("/api/wpay/callback", async (req, res) => {
   const body: Record<string, any> = req.body || {};
-  console.log("[WPay Callback] ── Received ──", JSON.stringify(body));
+  // Diagnostic: reveal exactly what WPay sends + how it was encoded.
+  console.log("[WPay Callback] ── Received ──");
+  console.log("[WPay Callback] content-type:", req.headers["content-type"]);
+  console.log("[WPay Callback] method:", req.method, "query:", JSON.stringify(req.query));
+  console.log("[WPay Callback] req.body:", req.body);
+  console.log("[WPay Callback] body(json):", JSON.stringify(body));
 
   try {
     const orderId   = String(body[WPAY_CB_ORDER] || body.out_trade_no || body.mch_order_no || "");
