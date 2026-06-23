@@ -421,7 +421,13 @@ async function wpayInitiatePayin(
   try {
     // Build params using env-configurable field names so the request shape can
     // be matched to the dashboard spec without a code change.
-    const amountValue = WPAY_AMOUNT_IN_CENTS ? Math.round(amount * 100) : amount;
+    // WPay spec: money is an integer (no decimals). Pakistan PKR is whole rupees,
+    // so we send the integer amount (or minor units if explicitly enabled).
+    const amountValue = WPAY_AMOUNT_IN_CENTS ? Math.round(amount * 100) : Math.round(amount);
+    // Field set matches the official WPay PayIn (H2C / cashier) spec exactly:
+    //   mchId, currency, out_trade_no, pay_type, money, notify_url, returnUrl, sign
+    // NOTE: goods_name is NOT part of the WPay spec — sending it would change the
+    // signed param set and break the MD5 signature, so it is intentionally omitted.
     const params: Record<string, string | number> = {
       [WPAY_F_MCH]:      WPAY_MCH_ID,
       [WPAY_F_ORDER]:    orderId,
@@ -429,7 +435,6 @@ async function wpayInitiatePayin(
       [WPAY_F_CURRENCY]: WPAY_CURRENCY,
       [WPAY_F_PAYTYPE]:  WPAY_PAY_TYPE,
       [WPAY_F_NOTIFY]:   callbackUrl,
-      [WPAY_F_GOODS]:    WPAY_GOODS_NAME,
     };
     if (WPAY_RETURN_URL) params[WPAY_F_RETURN] = WPAY_RETURN_URL;
 
@@ -441,9 +446,15 @@ async function wpayInitiatePayin(
     console.log("[WPay] Request body:", JSON.stringify(params));
     console.log("[WPay] Signature   :", sign);
 
-    const resp = await axios.post(WPAY_REQUEST_URL, params, {
+    // WPay requires application/x-www-form-urlencoded (NOT JSON). URLSearchParams
+    // serialises the param map into key=value&… form-encoded body.
+    const formBody = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString();
+
+    const resp = await axios.post(WPAY_REQUEST_URL, formBody, {
       timeout: 12000,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       validateStatus: () => true, // inspect non-2xx bodies instead of throwing
     });
 
@@ -453,10 +464,20 @@ async function wpayInitiatePayin(
       return { success: false, error: `Gateway HTTP ${resp.status}`, configured: true };
     }
 
+    // WPay response shape: { code: 0, msg: "success", data: { url, transaction_Id, host } }
+    // code === 0 means success; any other code is a documented business error.
     const data = resp.data;
+    const code = data?.code;
+    if (code !== undefined && Number(code) !== 0) {
+      const errMsg = `WPay error code ${code}: ${data?.msg || data?.message || "see WPay code table"}`;
+      console.warn(`[WPay] ⚠️  ${errMsg}`);
+      return { success: false, error: errMsg, configured: true };
+    }
+
     const url =
+      data?.data?.url || data?.data?.payUrl ||
       data?.payUrl || data?.pay_url || data?.checkoutUrl ||
-      data?.payment_url || data?.url || data?.data?.payUrl || data?.data?.url;
+      data?.payment_url || data?.url;
     if (url) {
       console.log(`[WPay] ✅ Checkout URL: ${url}`);
       return { success: true, payment_url: url, configured: true };
