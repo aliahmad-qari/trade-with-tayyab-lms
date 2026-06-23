@@ -1873,15 +1873,15 @@ export default function AdminPanel({
                       <span>WPay Gateway Orders</span>
                     </h3>
                     <span className="text-[10px] text-brand-violet font-bold font-mono">
-                      {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").length} orders
+                      {adminOrders.filter(o => o.paymentMethod.toLowerCase().startsWith("wpay")).length} orders
                     </span>
                   </div>
 
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").length === 0 ? (
+                    {adminOrders.filter(o => o.paymentMethod.toLowerCase().startsWith("wpay")).length === 0 ? (
                       <p className="text-xs text-gray-500 italic p-4 text-center">No WPay orders yet.</p>
                     ) : (
-                      adminOrders.filter(o => o.paymentMethod.toLowerCase() === "wpay").map((ord, idx) => (
+                      adminOrders.filter(o => o.paymentMethod.toLowerCase().startsWith("wpay")).map((ord, idx) => (
                         <div key={idx} className="p-3 bg-black/40 border border-white/5 rounded-lg text-xs flex justify-between items-center">
                           <div>
                             <p className="font-bold text-white truncate max-w-[150px]">{ord.userEmail}</p>

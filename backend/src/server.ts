@@ -59,6 +59,9 @@ const WPAY_F_PAYTYPE  = process.env.WPAY_FIELD_PAYTYPE  || "pay_type";
 const WPAY_F_GOODS    = process.env.WPAY_FIELD_GOODS    || "goods_name";
 const WPAY_F_CURRENCY = process.env.WPAY_FIELD_CURRENCY || "currency";
 const WPAY_PAY_TYPE   = process.env.WPAY_PAY_TYPE       || "8001";
+// Channels a client is allowed to request. Anything else falls back to the
+// configured default so an arbitrary client value can never reach WPay.
+const WPAY_CHANNELS   = ["JAZZCASH", "EASYPAISA"];
 const WPAY_CURRENCY   = process.env.WPAY_CURRENCY       || "PKR";
 const WPAY_GOODS_NAME = process.env.WPAY_GOODS_NAME     || "Trade With Tayyab";
 // Some gateways expect the amount in minor units (paisa/cents). Toggle on if so.
@@ -402,8 +405,11 @@ async function wpayInitiatePayin(
   orderId: string,
   amount: number,
   callbackUrl: string,
+  payType?: string,
 ): Promise<{ success: boolean; payment_url?: string; transaction_id?: string; error?: string; configured: boolean }> {
-  console.log(`\n[WPay] ── initiatePayin ── orderId=${orderId} amount=${amount}`);
+  // Per-request channel (JAZZCASH/EASYPAISA); fall back to the configured default.
+  const channel = payType || WPAY_PAY_TYPE;
+  console.log(`\n[WPay] ── initiatePayin ── orderId=${orderId} amount=${amount} pay_type=${channel}`);
   console.log(`[WPay] mch_id="${WPAY_MCH_ID}" secret=${WPAY_SECRET_KEY ? "SET(" + WPAY_SECRET_KEY.length + " chars)" : "MISSING!"} url="${WPAY_REQUEST_URL || "(unset)"}"`);
   console.log(`[WPay] callback(notify_url)=${callbackUrl}`);
 
@@ -434,7 +440,7 @@ async function wpayInitiatePayin(
       [WPAY_F_ORDER]:    orderId,
       [WPAY_F_AMOUNT]:   amountValue,
       [WPAY_F_CURRENCY]: WPAY_CURRENCY,
-      [WPAY_F_PAYTYPE]:  WPAY_PAY_TYPE,
+      [WPAY_F_PAYTYPE]:  channel,
       [WPAY_F_NOTIFY]:   callbackUrl,
     };
     if (WPAY_RETURN_URL) params[WPAY_F_RETURN] = WPAY_RETURN_URL;
@@ -535,11 +541,13 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
       res.json({ success: true, message: "Already enrolled", alreadyEnrolled: true }); return;
     }
 
+    const reqType = String(req.body.payType || "").toUpperCase();
+    const payType = WPAY_CHANNELS.includes(reqType) ? reqType : WPAY_PAY_TYPE;
     const orderId = `ord_wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const order: Order = {
       id: orderId, userId: user.id, userEmail: user.email,
       courseId: course.id, courseTitle: course.title,
-      amount: course.price, paymentMethod: "WPay",
+      amount: course.price, paymentMethod: `WPay:${payType}`,
       accountNumber: req.body.paymentNumber || "wpay",
       status: "pending", createdAt: new Date().toISOString(),
     };
@@ -549,7 +557,7 @@ app.post("/api/courses/:id/enroll-wpay", async (req, res) => {
 
     const host = (process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const callbackUrl = `${host}/api/wpay/callback`;
-    const result = await wpayInitiatePayin(orderId, course.price, callbackUrl);
+    const result = await wpayInitiatePayin(orderId, course.price, callbackUrl, payType);
 
     if (result.success && result.payment_url) {
       // Persist WPay's real gateway transaction id (callback omits it).
@@ -609,11 +617,13 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
     }
 
     // 5. Create pending order
+    const reqType = String(req.body.payType || "").toUpperCase();
+    const payType = WPAY_CHANNELS.includes(reqType) ? reqType : WPAY_PAY_TYPE;
     const orderId = `ord_wp_pdf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const order: Order = {
       id: orderId, userId: user.id, userEmail: user.email,
       courseId: pdf.id, courseTitle: pdf.title, productType: "pdf",
-      amount: pdf.price, paymentMethod: "WPay",
+      amount: pdf.price, paymentMethod: `WPay:${payType}`,
       accountNumber: req.body.paymentNumber || "wpay",
       status: "pending", createdAt: new Date().toISOString(),
     };
@@ -624,12 +634,12 @@ app.post("/api/pdfs/:id/enroll-wpay", async (req, res) => {
     // 6. Call WPay
     const host = (process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const callbackUrl = `${host}/api/wpay/callback`;
-    const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl);
+    const result = await wpayInitiatePayin(orderId, pdf.price, callbackUrl, payType);
 
     if (result.success && result.payment_url) {
       // Persist WPay's real gateway transaction id (callback omits it).
       if (result.transaction_id) { order.transactionId = result.transaction_id; await saveDB(db); }
-      console.log(`[PDF Enroll-WPay] ✅ WPay checkout URL ready — redirecting`);
+      console.log(`[PDF Enroll-WPay] ✅ WPay checkout URL ready (${payType}) — redirecting`);
       res.json({ success: true, payment_url: result.payment_url, orderId, message: "Redirecting to WPay checkout..." });
     } else {
       // Do NOT auto-approve — order stays "pending" until WPay's callback

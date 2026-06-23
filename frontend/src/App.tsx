@@ -68,6 +68,7 @@ export default function App() {
   // same modal + workflow serves both product kinds.
   const [paymentModalProduct, setPaymentModalProduct] = useState<{ kind: "course" | "pdf"; id: string; title: string; price: number } | null>(null);
   const [payNumber, setPayNumber] = useState("");
+  const [payType, setPayType] = useState<"JAZZCASH" | "EASYPAISA">("JAZZCASH");
 
   // Account Settings Form
   const [settingsName, setSettingsName] = useState("");
@@ -351,6 +352,7 @@ export default function App() {
     }
     setPaymentModalProduct({ kind: "course", id: course.id, title: course.title, price: course.price });
     setPayNumber("");
+    setPayType("JAZZCASH");
   };
 
   // Premium PDF purchase — reuses the exact same payment modal/workflow.
@@ -367,6 +369,7 @@ export default function App() {
     }
     setPaymentModalProduct({ kind: "pdf", id: pdf.id, title: pdf.title, price: pdf.price });
     setPayNumber("");
+    setPayType("JAZZCASH");
   };
 
   /**
@@ -412,6 +415,7 @@ export default function App() {
         body: JSON.stringify({
           paymentNumber: payNumber.trim(),
           paymentMethod: "WPay",
+          payType,
         }),
       });
 
@@ -1947,6 +1951,28 @@ export default function App() {
             </div>
 
             <form onSubmit={submitPaymentForm} className="space-y-4">
+              <div className="space-y-1.5 text-left">
+                <label className="text-[10px] uppercase font-bold text-gray-400 block pb-0.5">
+                  Pay with
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["JAZZCASH", "EASYPAISA"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPayType(m)}
+                      className={`px-3 py-2 rounded-lg font-bold text-[11px] uppercase font-mono border transition-colors cursor-pointer ${
+                        payType === m
+                          ? "bg-brand-purple border-brand-purple text-white glow-dot-purple"
+                          : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {payType === m ? "✓ " : ""}{m === "JAZZCASH" ? "JazzCash" : "Easypaisa"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] uppercase font-bold text-gray-400 block pb-0.5">
                   Your WPay Wallet / Account Number
