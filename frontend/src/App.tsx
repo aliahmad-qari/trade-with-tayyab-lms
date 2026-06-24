@@ -1812,14 +1812,8 @@ export default function App() {
                     </button>
                   </p>
                   
-                  {/* Mock accounts list for immediate sandbox preview */}
-                  <div className="p-3.5 bg-brand-purple/5 border border-brand-purple/20 text-brand-purple rounded-lg space-y-1.5 text-left font-sans">
-                    <span className="block text-[10px] uppercase font-extrabold tracking-widest text-[#a78bfa]">Sandbox Accounts for immediate testing:</span>
-                    <div className="text-[11px] space-y-1 text-gray-300 font-sans">
-                      <p>🛡️ **Admin Log:** <span className="select-all font-mono">Tusharsilawat41k@gmail.com</span> | Pwd: <span className="select-all font-mono">admin123</span></p>
-                      <p>📚 **Student Log:** <span className="select-all font-mono">tayyab@trade.com</span> | Pwd: <span className="select-all font-mono">tayyab123</span> *(SMC course owned!)*</p>
-                    </div>
-                  </div>
+                 
+                
                 </div>
               </div>
             )}
