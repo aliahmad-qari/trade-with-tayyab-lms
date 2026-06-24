@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { apiFetch } from "../lib/api";
 import { X, Send, Brain, Bot, User, Sparkles, Loader2 } from "lucide-react";
 
 interface Message {
@@ -44,7 +45,7 @@ export default function AICoachModal({ isOpen, onClose, token }: AICoachModalPro
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/ai/coach", {
+      const response = await apiFetch("/api/ai/coach", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

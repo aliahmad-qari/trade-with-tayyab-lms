@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { X, ZoomIn, ZoomOut, ShieldAlert, FileText } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { X, ZoomIn, ZoomOut, ShieldAlert, FileText, Loader2 } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+// Vite resolves this URL to the bundled worker asset at build time.
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = PdfWorker;
 
 interface WatermarkData {
   email: string;
@@ -20,7 +25,14 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
   const [wtStyle, setWtStyle] = useState({ top: "35%", left: "20%" });
   const [wtStyle2, setWtStyle2] = useState({ bottom: "35%", right: "20%" });
 
-  // Periodically drift watermarks over the document to prevent photos/screen-recordings
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [numPages, setNumPages] = useState(0);
+
+  const canvasHostRef = useRef<HTMLDivElement>(null);
+  const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+
+  // Periodically drift watermarks over the document to deter photos/screen-recordings
   useEffect(() => {
     const timer = setInterval(() => {
       const topRandom = Math.floor(Math.random() * 50) + 15;
@@ -35,6 +47,89 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
     return () => clearInterval(timer);
   }, []);
 
+  // Load the PDF document once. Rendering to <canvas> means no native PDF
+  // toolbar (download/print) is ever exposed, and the raw file URL is never
+  // handed to a native viewer — it is fetched into memory and drawn.
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+    pdfDocRef.current = null;
+
+    const loadingTask = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false });
+    loadingTask.promise
+      .then((doc) => {
+        if (cancelled) {
+          doc.destroy();
+          return;
+        }
+        pdfDocRef.current = doc;
+        setNumPages(doc.numPages);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Secure PDF load failed:", err);
+        setLoadError("Unable to load this secured document.");
+        setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      loadingTask.destroy?.();
+      pdfDocRef.current?.destroy();
+      pdfDocRef.current = null;
+    };
+  }, [pdfUrl]);
+
+  // (Re)render every page to canvas whenever the document or zoom changes.
+  useEffect(() => {
+    const doc = pdfDocRef.current;
+    const host = canvasHostRef.current;
+    if (!doc || !host || isLoading) return;
+
+    let cancelled = false;
+    const renderTasks: ReturnType<pdfjsLib.PDFPageProxy["render"]>[] = [];
+
+    const renderAll = async () => {
+      host.innerHTML = "";
+      const scale = (zoom / 100) * 1.5; // 1.5 base for crisp text at 100%
+      for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+        if (cancelled) return;
+        const page = await doc.getPage(pageNum);
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.className = "mx-auto mb-4 rounded shadow-lg bg-white max-w-full select-none pointer-events-none";
+        ctx.scale(dpr, dpr);
+
+        host.appendChild(canvas);
+        const task = page.render({ canvasContext: ctx, viewport });
+        renderTasks.push(task);
+        try {
+          await task.promise;
+        } catch {
+          /* render cancelled on zoom change/unmount — ignore */
+        }
+      }
+    };
+
+    renderAll();
+
+    return () => {
+      cancelled = true;
+      renderTasks.forEach((t) => t.cancel());
+    };
+  }, [zoom, isLoading, numPages]);
+
   const handleZoomIn = () => {
     if (zoom < 180) setZoom(zoom + 20);
   };
@@ -44,7 +139,7 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col justify-between select-none"
       onContextMenu={(e) => e.preventDefault()}
       id="secure-pdf-container"
@@ -104,7 +199,7 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
         </div>
 
         {/* Dynamic Drifting Heavy Floating Watermarks */}
-        <div 
+        <div
           className="absolute z-40 transition-all duration-1000 select-none pointer-events-none text-[8px] sm:text-[10px] text-white/10 font-mono tracking-wider bg-black/20 p-2.5 rounded border border-white/5"
           style={{ ...wtStyle }}
         >
@@ -114,7 +209,7 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
           <span className="block font-bold text-red-500/30 text-[7px]">DO NOT SCREENSHOT / PIRACY TRACED</span>
         </div>
 
-        <div 
+        <div
           className="absolute z-40 transition-all duration-1000 select-none pointer-events-none text-[8px] sm:text-[10px] text-white/10 font-mono tracking-wider bg-black/20 p-2.5 rounded border border-white/5"
           style={{ ...wtStyle2 }}
         >
@@ -124,25 +219,34 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
           <span className="block font-bold text-red-500/30 text-[7px]">PROPRIETARY MATERIAL • PRINT DISABLED</span>
         </div>
 
-        {/* Transparent Click Blocker Shield Overlay directly on top of the iframe to block drag, double-click, and right-clicks */}
-        <div 
-          className="absolute inset-x-0 top-0 bottom-0 z-30 opacity-0 cursor-default" 
+        {/* Transparent Click Blocker Shield Overlay to block drag, double-click, and right-clicks */}
+        <div
+          className="absolute inset-x-0 top-0 bottom-0 z-30 pointer-events-none"
           onContextMenu={(e) => e.preventDefault()}
         />
 
-        {/* PDF Embedded Iframe */}
+        {/* PDF Canvas Render Surface (no native toolbar, no download/print, no exposed file URL) */}
         <div className="w-full h-full max-w-4xl bg-[#1e2330] rounded-xl shadow-2xl relative overflow-hidden border border-white/10 p-1">
-          <iframe
-            src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&messages=0`}
-            className="w-full h-full border-none rounded-lg"
-            style={{ 
-              transform: `scale(${zoom / 100})`, 
-              transformOrigin: "top center", 
-              width: `${100 * (100 / zoom)}%`, 
-              height: `${100 * (100 / zoom)}%`
-            }}
-            title="SMC Educational Guidebook"
+          <div
+            ref={canvasHostRef}
+            className="w-full h-full overflow-auto rounded-lg p-2 sm:p-4 select-none"
+            onContextMenu={(e) => e.preventDefault()}
+            onDragStart={(e) => e.preventDefault()}
           />
+
+          {isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-300 bg-[#1e2330]/80">
+              <Loader2 className="w-6 h-6 animate-spin text-brand-purple" />
+              <span className="text-xs font-mono">Decrypting secure document…</span>
+            </div>
+          )}
+
+          {loadError && !isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6 text-red-300 bg-[#1e2330]/90">
+              <ShieldAlert className="w-7 h-7" />
+              <span className="text-xs font-mono max-w-xs">{loadError}</span>
+            </div>
+          )}
         </div>
       </div>
 

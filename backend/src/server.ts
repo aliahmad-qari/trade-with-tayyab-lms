@@ -211,7 +211,14 @@ app.set("trust proxy", 1);
 
 // CORS
 const frontendUrl = process.env.FRONTEND_URL?.replace(/\/$/, "");
-const allowedOrigins = [frontendUrl, "http://localhost:3000", "http://localhost:5173"].filter(Boolean) as string[];
+const allowedOrigins = [
+  frontendUrl,
+  "http://localhost:3000",
+  "http://localhost:5173",
+  // Native Capacitor WebView origins (Android/iOS) for the mobile app.
+  "https://localhost",
+  "capacitor://localhost",
+].filter(Boolean) as string[];
 app.use(cors({
   origin: (origin, cb) => (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error("CORS blocked")),
   credentials: true,

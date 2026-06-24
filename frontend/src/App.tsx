@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { apiFetch } from "./lib/api";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import AICoachModal from "./components/AICoachModal";
@@ -111,7 +112,7 @@ export default function App() {
     }
     
     try {
-      const response = await fetch("/api/auth/me", {
+      const response = await apiFetch("/api/auth/me", {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
 
@@ -138,7 +139,7 @@ export default function App() {
 
   const fetchCourses = async () => {
     try {
-      const response = await fetch("/api/courses");
+      const response = await apiFetch("/api/courses");
       if (response.ok) {
         const data = await response.json();
         const mappedCourses = (data.courses || []).map((course: Course) => {
@@ -157,7 +158,7 @@ export default function App() {
 
   const fetchPdfs = async () => {
     try {
-      const response = await fetch("/api/pdfs", {
+      const response = await apiFetch("/api/pdfs", {
         headers: authToken ? { "Authorization": `Bearer ${authToken}` } : undefined
       });
       if (response.ok) {
@@ -172,7 +173,7 @@ export default function App() {
   const fetchEnrollments = async () => {
     if (!authToken) return;
     try {
-      const response = await fetch("/api/users/enrollments", {
+      const response = await apiFetch("/api/users/enrollments", {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
@@ -188,7 +189,7 @@ export default function App() {
   const checkActiveDevices = async () => {
     if (!authToken) return;
     try {
-      const response = await fetch("/api/sessions/check", {
+      const response = await apiFetch("/api/sessions/check", {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
@@ -208,20 +209,20 @@ export default function App() {
   const fetchAdminMetrics = async () => {
     if (!authToken || currentUser?.role !== "admin") return;
     try {
-      const rStats = await fetch("/api/admin/dashboard-stats", { headers: { "Authorization": `Bearer ${authToken}` } });
+      const rStats = await apiFetch("/api/admin/dashboard-stats", { headers: { "Authorization": `Bearer ${authToken}` } });
       if (rStats.ok) {
         const dStats = await rStats.json();
         setAdminStats(dStats.stats);
         setSuspiciousLogins(dStats.suspiciousLogins || []);
       }
 
-      const rUsers = await fetch("/api/admin/users", { headers: { "Authorization": `Bearer ${authToken}` } });
+      const rUsers = await apiFetch("/api/admin/users", { headers: { "Authorization": `Bearer ${authToken}` } });
       if (rUsers.ok) {
         const dUsers = await rUsers.json();
         setAdminUsers(dUsers.users || []);
       }
 
-      const rOrders = await fetch("/api/admin/orders", { headers: { "Authorization": `Bearer ${authToken}` } });
+      const rOrders = await apiFetch("/api/admin/orders", { headers: { "Authorization": `Bearer ${authToken}` } });
       if (rOrders.ok) {
         const dOrders = await rOrders.json();
         setAdminOrders(dOrders.orders || []);
@@ -251,7 +252,7 @@ export default function App() {
     }
     setIsSubmitLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: loginEmail, password: loginPassword })
@@ -298,7 +299,7 @@ export default function App() {
     }
     setIsSubmitLoading(true);
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await apiFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: regName, email: regEmail, password: regPassword })
@@ -322,7 +323,7 @@ export default function App() {
   };
 
   const handleLogoutAction = () => {
-    fetch("/api/auth/logout", {
+    apiFetch("/api/auth/logout", {
       method: "POST",
       headers: { "Authorization": `Bearer ${authToken}` }
     }).finally(() => {
@@ -406,7 +407,7 @@ export default function App() {
       // [DEBUG] Uncomment to inspect the outgoing request:
       // console.log("[WPay] Initiating payment for:", paymentModalProduct, "via", enrollEndpoint);
 
-      const res = await fetch(enrollEndpoint, {
+      const res = await apiFetch(enrollEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -469,7 +470,7 @@ export default function App() {
 
   const playLessonVideo = async (courseId: string, lessonId: string) => {
     try {
-      const res = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/secure-play`, {
+      const res = await apiFetch(`/api/courses/${courseId}/lessons/${lessonId}/secure-play`, {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       const data = await res.json();
@@ -489,7 +490,7 @@ export default function App() {
         });
         
         // Update back last watched on server
-        fetch(`/api/progress/${courseId}/update`, {
+        apiFetch(`/api/progress/${courseId}/update`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -509,7 +510,7 @@ export default function App() {
   const toggleLessonCheck = async (courseId: string, lessonId: string, currentlyCompleted: boolean) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/progress/${courseId}/update`, {
+      const res = await apiFetch(`/api/progress/${courseId}/update`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -533,7 +534,7 @@ export default function App() {
   const fetchProgressObj = async (courseId: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/progress/${courseId}`, {
+      const res = await apiFetch(`/api/progress/${courseId}`, {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (res.ok) {
@@ -554,7 +555,7 @@ export default function App() {
   const updateAccountSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/auth/profile/update", {
+      const res = await apiFetch("/api/auth/profile/update", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

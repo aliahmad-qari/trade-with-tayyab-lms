@@ -143,10 +143,13 @@ export default function VideoPlayer({ videoUrl, isPreviewLimit, watermark, title
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onClick={handlePlayPause}
+        onContextMenu={(e) => e.preventDefault()} // Block right-click "Save video as"
+        onDragStart={(e) => e.preventDefault()}
         className="w-full h-full object-contain cursor-pointer"
         controls={false} // Disable native overlay browser menus
         disablePictureInPicture
-        controlsList="nodownload noplaybackrate"
+        disableRemotePlayback
+        controlsList="nodownload noplaybackrate noremoteplayback"
         playsInline
       />
 

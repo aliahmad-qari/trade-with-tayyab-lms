@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { apiFetch } from "../lib/api";
 import { Course, User, PdfProduct } from "../types";
 import VideoPlayer from "./VideoPlayer";
 import SecurePDFViewer from "./SecurePDFViewer";
@@ -129,7 +130,7 @@ export default function StudentPanel({
     if (!authToken) return;
     setIsSecLoading(true);
     try {
-      const response = await fetch("/api/sessions/check", {
+      const response = await apiFetch("/api/sessions/check", {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       if (response.ok) {
@@ -153,7 +154,7 @@ export default function StudentPanel({
   const handleClearOtherSessions = async () => {
     if (!authToken) return;
     try {
-      const res = await fetch("/api/sessions/clear-others", {
+      const res = await apiFetch("/api/sessions/clear-others", {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -184,7 +185,7 @@ export default function StudentPanel({
       return;
     }
     try {
-      const res = await fetch(`/api/pdfs/${pdf.id}/secure-access`, {
+      const res = await apiFetch(`/api/pdfs/${pdf.id}/secure-access`, {
         headers: { "Authorization": `Bearer ${authToken}` }
       });
       const data = await res.json();

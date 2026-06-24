@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { apiFetch } from "../lib/api";
 import { Course, User, Order, PdfProduct } from "../types";
 import {
   ShieldAlert, BookOpen, UserCheck, CreditCard, BarChart2, Lock,
@@ -117,7 +118,7 @@ export default function AdminPanel({
     formData.append("file", file);
     
     try {
-      const response = await fetch("/api/admin/upload", {
+      const response = await apiFetch("/api/admin/upload", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${authToken}`
@@ -175,7 +176,7 @@ export default function AdminPanel({
     const targetUrl = isEditMode ? "/api/admin/pdfs/update" : "/api/admin/pdfs/create";
 
     try {
-      const response = await fetch(targetUrl, {
+      const response = await apiFetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -211,7 +212,7 @@ export default function AdminPanel({
   const handleDeletePdfAdmin = async (id: string) => {
     if (!window.confirm("Do you want to delete this PDF resource entirely from registry?")) return;
     try {
-      const res = await fetch(`/api/admin/pdfs/${id}/delete`, {
+      const res = await apiFetch(`/api/admin/pdfs/${id}/delete`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -226,7 +227,7 @@ export default function AdminPanel({
 
   const handleTogglePdfPublish = async (pdf: PdfProduct) => {
     try {
-      const response = await fetch(`/api/admin/pdfs/${pdf.id}/toggle-publish`, {
+      const response = await apiFetch(`/api/admin/pdfs/${pdf.id}/toggle-publish`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -308,7 +309,7 @@ export default function AdminPanel({
     const targetUrl = isEditMode ? "/api/admin/courses/update" : "/api/admin/courses/create";
     
     try {
-      const response = await fetch(targetUrl, {
+      const response = await apiFetch(targetUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -360,7 +361,7 @@ export default function AdminPanel({
 
   const handleToggleBlockAdmin = async (userId: string) => {
     try {
-      const response = await fetch(`/api/admin/users/${userId}/toggle-block`, {
+      const response = await apiFetch(`/api/admin/users/${userId}/toggle-block`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -378,7 +379,7 @@ export default function AdminPanel({
 
   const handleOrderApproveAdmin = async (orderId: string, action: "approved" | "rejected") => {
     try {
-      const response = await fetch(`/api/admin/orders/${orderId}/update`, {
+      const response = await apiFetch(`/api/admin/orders/${orderId}/update`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -401,7 +402,7 @@ export default function AdminPanel({
   const handleDeleteCourseAdmin = async (id: string) => {
     if (!window.confirm("Do you want to delete this class entirely from registry?")) return;
     try {
-      const res = await fetch(`/api/admin/courses/${id}/delete`, {
+      const res = await apiFetch(`/api/admin/courses/${id}/delete`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${authToken}` }
       });
@@ -753,7 +754,7 @@ export default function AdminPanel({
                           <button
                             onClick={async () => {
                               try {
-                                const response = await fetch(`/api/admin/courses/${c.id}/toggle-publish`, {
+                                const response = await apiFetch(`/api/admin/courses/${c.id}/toggle-publish`, {
                                   method: "POST",
                                   headers: {
                                     "Authorization": `Bearer ${authToken}`
