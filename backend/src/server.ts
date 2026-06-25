@@ -212,6 +212,10 @@ app.set("trust proxy", 1);
 // CORS
 const frontendUrl = process.env.FRONTEND_URL?.replace(/\/$/, "");
 const allowedOrigins = [
+  // Production custom domain (and www variant) — hard-coded so CORS works
+  // even if FRONTEND_URL is unset in the deploy environment.
+  "https://tradewithtayyab.tech",
+  "https://www.tradewithtayyab.tech",
   frontendUrl,
   "http://localhost:3000",
   "http://localhost:5173",
@@ -222,6 +226,10 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, cb) => (!origin || allowedOrigins.includes(origin)) ? cb(null, true) : cb(new Error("CORS blocked")),
   credentials: true,
+  // Reflect the request's allowed headers (Authorization, Content-Type, etc.)
+  // and methods so preflight (OPTIONS) requests with auth headers succeed.
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // WPay posts callbacks as x-www-form-urlencoded
