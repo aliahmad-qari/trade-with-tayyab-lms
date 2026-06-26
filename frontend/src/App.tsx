@@ -1823,7 +1823,7 @@ export default function App() {
               <div className="max-w-md w-full mx-auto p-6 sm:p-8 rounded-2xl glass-panel border border-brand-purple/20 text-left space-y-6 my-10 animate-in fade-in duration-300 font-sans">
                 <div className="space-y-1.5 text-center">
                   <h1 className="text-2xl font-extrabold text-white">Create Academy Account</h1>
-                  <p className="text-xs text-gray-400">Unlock your Forex knowledge paths right now.</p>
+                  <p className="text-xs text-gray-400">Unlock your color Trading knowledge paths right now.</p>
                 </div>
 
                 <form onSubmit={handleRegisterSubmit} className="space-y-4">
