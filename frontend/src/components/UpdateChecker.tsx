@@ -66,7 +66,28 @@ export default function UpdateChecker() {
 
   if (!manifest || dismissed) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    // Guard against the "downloads index.html" trap: if the APK path is missing,
+    // Vercel's SPA catch-all serves index.html (Content-Type text/html) instead
+    // of a 404. Verify it's really an APK before handing off to the OS.
+    try {
+      const head = await fetch(APK_DOWNLOAD_URL, { method: "HEAD" });
+      const type = head.headers.get("content-type") ?? "";
+      console.log("[UpdateChecker] APK URL:", APK_DOWNLOAD_URL);
+      console.log("[UpdateChecker] status:", head.status, "content-type:", type);
+
+      if (!head.ok || type.includes("text/html")) {
+        // Wrong file (HTML) or missing — don't download the homepage as an .apk.
+        console.error("[UpdateChecker] APK not served correctly — aborting download.");
+        window.alert("Update file is unavailable right now. Please try again later.");
+        return;
+      }
+    } catch (err) {
+      // Network/HEAD failure: log, then fall through and still attempt the open
+      // so a flaky HEAD doesn't block a genuinely-present file.
+      console.warn("[UpdateChecker] HEAD check failed, attempting download anyway:", err);
+    }
+
     // Capacitor intercepts the "_system" target and opens the URL outside the
     // WebView, so the OS handles the .apk download + install prompt.
     window.open(APK_DOWNLOAD_URL, "_system");
