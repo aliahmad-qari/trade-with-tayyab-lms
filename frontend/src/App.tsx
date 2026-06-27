@@ -6,6 +6,7 @@ import AICoachModal from "./components/AICoachModal";
 import VideoPlayer from "./components/VideoPlayer";
 import StudentPanel from "./components/StudentPanel";
 import AdminPanel from "./components/AdminPanel";
+import UpdateChecker from "./components/UpdateChecker";
 import { Course, Order, User, SuspiciousLogin, PdfProduct } from "./types";
 // @ts-ignore
 import wingoPatternLight from "./assets/images/wingo_pattern_light_1781678462385.jpg";
@@ -2009,11 +2010,14 @@ export default function App() {
       )}
 
       {/* Floating Smart Gemini Expert coach modal widget */}
-      <AICoachModal 
+      <AICoachModal
         isOpen={isCoachOpen}
         onClose={() => setIsCoachOpen(false)}
         token={authToken}
       />
+
+      {/* In-app update prompt (native app only) */}
+      <UpdateChecker />
     </div>
   );
 }

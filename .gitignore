@@ -16,3 +16,8 @@ android/build/
 # frontend and backend dist
 frontend/dist/
 backend/dist/
+
+# Android release signing — NEVER commit the keystore or its passwords
+keystore.properties
+*.jks
+*.keystore
