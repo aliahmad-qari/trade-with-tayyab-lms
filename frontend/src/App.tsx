@@ -881,12 +881,6 @@ export default function App() {
                                   </div>
 
                                   <div className="flex gap-1.5">
-                                    <button
-                                      onClick={() => { setSelectedPdf(pdf); changeTab("pdfdetails"); }}
-                                      className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      Details
-                                    </button>
                                     {isPurchased ? (
                                       <button
                                         onClick={() => changeTab("dashboard")}
@@ -1191,12 +1185,6 @@ export default function App() {
                                   </div>
 
                                   <div className="flex gap-1.5">
-                                    <button
-                                      onClick={() => { setSelectedPdf(pdf); changeTab("pdfdetails"); }}
-                                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg text-xs font-semibold transition cursor-pointer"
-                                    >
-                                      Details
-                                    </button>
                                     {isPurchased ? (
                                       <button
                                         onClick={() => changeTab("dashboard")}
@@ -1408,28 +1396,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Preview pages */}
-                  <div className="space-y-4">
-                    <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-                      <BookOpenText className="w-5 h-5 text-brand-violet" />
-                      <span>Document Preview</span>
-                    </h2>
-
-                    {selectedPdf.previewUrl ? (
-                      <div className="rounded-xl border border-white/5 overflow-hidden bg-[#1e2330] aspect-[4/3]">
-                        <iframe
-                          src={`${selectedPdf.previewUrl}#toolbar=0&navpanes=0`}
-                          className="w-full h-full border-none"
-                          title="PDF Preview"
-                        />
-                      </div>
-                    ) : (
-                      <div className="p-10 rounded-xl border border-white/5 bg-brand-card/50 text-center space-y-2">
-                        <Lock className="w-8 h-8 text-gray-500 mx-auto" />
-                        <p className="text-xs text-gray-400">No free preview available. Purchase to unlock the full secure document.</p>
-                      </div>
-                    )}
-                  </div>
                 </div>
 
                 {/* Right side: purchase box widget */}
