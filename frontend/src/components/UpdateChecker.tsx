@@ -18,7 +18,7 @@ import { Download, X, Sparkles } from "lucide-react";
  */
 
 /** versionCode this bundle was built with — bump on every release. */
-const CURRENT_VERSION_CODE = 2;
+const CURRENT_VERSION_CODE = 4;
 
 /** Static manifest + APK live on the website (Vercel), NOT the /api backend. */
 const VERSION_MANIFEST_URL = "https://tradewithtayyab.tech/apk-version.json";
