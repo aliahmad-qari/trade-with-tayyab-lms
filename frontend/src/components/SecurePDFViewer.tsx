@@ -93,23 +93,30 @@ export default function SecurePDFViewer({ pdfUrl, title, onClose, watermark }: S
 
     const renderAll = async () => {
       host.innerHTML = "";
-      const scale = (zoom / 100) * 1.5; // 1.5 base for crisp text at 100%
+      // Decouple the canvas BACKING resolution from its DISPLAY size:
+      //  • cssScale   → how big the page looks on screen (driven by zoom)
+      //  • renderScale → how many real pixels we rasterise (cssScale × the
+      //    device pixel ratio) so text stays crisp on HiDPI / mobile screens.
+      // The min() cap keeps a huge page from exhausting canvas memory on
+      // low-end phones (~4× a Letter page ≈ 2448px wide, safe everywhere).
+      const dpr = window.devicePixelRatio || 1;
+      const cssScale = (zoom / 100) * 2; // 2× base → sharp text at 100%
+      const renderScale = Math.min(cssScale * dpr, 4);
       for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
         if (cancelled) return;
         const page = await doc.getPage(pageNum);
         if (cancelled) return;
-        const viewport = page.getViewport({ scale });
+        const viewport = page.getViewport({ scale: renderScale });      // backing store
+        const cssViewport = page.getViewport({ scale: cssScale });       // display size
 
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${Math.floor(cssViewport.width)}px`;
+        canvas.style.height = "auto"; // preserve aspect ratio when max-w-full clamps width
         canvas.className = "mx-auto mb-4 rounded shadow-lg bg-white max-w-full select-none pointer-events-none";
-        ctx.scale(dpr, dpr);
 
         host.appendChild(canvas);
         const task = page.render({ canvasContext: ctx, viewport });

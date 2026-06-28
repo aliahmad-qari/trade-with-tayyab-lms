@@ -688,6 +688,13 @@ export default function StudentPanel({
                           <span className="text-[9px] uppercase font-mono font-bold text-emerald-500">📄 {pdf.category || "Resource"}</span>
                           <h4 className="text-xs font-bold text-white line-clamp-2 leading-tight">{pdf.title}</h4>
                         </div>
+                        {/* Ownership confirmation — shown because this card lives in the
+                            purchasedPdfs list (derived from purchasedPdfIds set after an
+                            approved payment). */}
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/25">
+                          <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <span className="text-[10px] font-bold text-emerald-400">You have purchased this PDF</span>
+                        </div>
                       </div>
                       <button
                         type="button"
