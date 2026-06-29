@@ -444,7 +444,7 @@ export default function StudentPanel({
                   {/* Latest Purchased Classes lists */}
                   <div className="space-y-3.5 text-left">
                     <h2 className="text-sm font-extrabold text-white uppercase font-mono tracking-wider">Latest Purchased Academy Classes</h2>
-                    {enrolledCourses.length === 0 ? (
+                    {enrolledCourses.length === 0 && purchasedPdfs.length === 0 ? (
                       <div className="p-10 rounded-xl bg-white/5 border border-white/5 text-center text-gray-400 text-xs">
                         You have not enrolled in any trading courses yet. Go to premium classes and submit an enrollment.
                       </div>
@@ -465,6 +465,29 @@ export default function StudentPanel({
                                 className="px-3 py-1 bg-white/5 hover:bg-brand-purple/20 text-gray-300 hover:text-white rounded text-[11px] font-bold shrink-0 transition"
                               >
                                 View Classroom
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Purchased premium PDFs / digital resources — same purchasedPdfs
+                            list that powers the My PDFs/Resources tab, surfaced here so
+                            a student who only bought a PDF still sees their purchase. */}
+                        {purchasedPdfs.map((pdf) => {
+                          return (
+                            <div key={pdf.id} className="p-3 rounded-xl bg-brand-card hover:bg-brand-card/90 border border-white/5 flex gap-4 items-center justify-between">
+                              <div className="flex gap-3 items-center min-w-0">
+                                <img src={pdf.thumbnailUrl} className="w-12 h-12 rounded-lg object-cover bg-black shrink-0" alt="pdf" />
+                                <div className="min-w-0">
+                                  <h4 className="text-xs font-bold text-white truncate">{pdf.title}</h4>
+                                  <span className="text-[9px] text-[#a78bfa] block mt-0.5">📄 {pdf.category || "Resource"}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => openSecurePdf(pdf)}
+                                className="px-3 py-1 bg-white/5 hover:bg-brand-purple/20 text-gray-300 hover:text-white rounded text-[11px] font-bold shrink-0 transition"
+                              >
+                                Open PDF
                               </button>
                             </div>
                           );
